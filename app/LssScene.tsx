@@ -1,155 +1,72 @@
 "use client";
 
-import { Canvas, ThreeEvent, useFrame, useLoader, useThree } from "@react-three/fiber";
-import { useEffect, useMemo, useRef } from "react";
+import {Canvas, ThreeEvent, useFrame, useThree} from "@react-three/fiber";
+import {useEffect,useMemo,useRef} from "react";
 import * as THREE from "three";
-import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import {OrbitControls} from "three/examples/jsm/controls/OrbitControls.js";
 
-export const CAMERA_NAMES = ["CAM_FRONT_LEFT", "CAM_FRONT", "CAM_FRONT_RIGHT", "CAM_BACK_LEFT", "CAM_BACK", "CAM_BACK_RIGHT"] as const;
+export const CAMERA_NAMES=["CAM_FRONT_LEFT","CAM_FRONT","CAM_FRONT_RIGHT","CAM_BACK_LEFT","CAM_BACK","CAM_BACK_RIGHT"] as const;
+export type BevMode="probability"|"threshold"|"gt"|"errors";
+export type SceneSelection=
+  |{kind:"camera";index:number}
+  |{kind:"pixel";pixel:[number,number];feature:[number,number]}
+  |{kind:"feature";index:[number,number];anchor:[number,number]}
+  |{kind:"ray";pixel:[number,number];depth:number}
+  |{kind:"depth";bin:number;meters:number;probability:number}
+  |{kind:"lidar";index:number;lidar:[number,number,number];ego:[number,number,number]}
+  |{kind:"object";index:number}
+  |{kind:"cell";index:[number,number];center:[number,number];contributors:string[];counts?:number[]}
+  |{kind:"trajectory";index:number;cost:number;probability:number};
+export type Trajectory={name:string;points:[number,number][];cost:number;probability:number};
+export type Vehicle={center_ego:number[];dimensions:number[];yaw_ego:number;label?:number;num_lidar_pts?:number};
 
-export type SceneSelection =
-  | {kind:"camera"; index:number}
-  | {kind:"ray"; pixel:[number,number]; depth:number}
-  | {kind:"depth"; bin:number; meters:number; probability:number}
-  | {kind:"cell"; index:[number,number]; center:[number,number]; contributors:string[]; counts?:number[]}
-  | {kind:"trajectory"; index:number; cost:number; probability:number};
-
-export type Trajectory = {name:string; points:[number,number][]; cost:number; probability:number};
-
-const FALLBACK_CAMERAS:[number,number,number,number][] = [
-  [-1.2,1.5,1.7,-.55], [0,1.7,1.75,0], [1.2,1.5,1.7,.55],
-  [-1.1,-1.4,1.65,-2.55], [0,-1.5,1.7,Math.PI], [1.1,-1.4,1.65,2.55],
-];
-
-function asset(path:string){
-  const prefix=process.env.NEXT_PUBLIC_BASE_PATH??"";
-  return `${prefix}${path}`;
-}
-
-function Line({points,color="#161918",opacity=1,dashed=false}:{points:[number,number,number][];color?:string;opacity?:number;dashed?:boolean}){
+function Line({points,color="#161918",opacity=1}:{points:[number,number,number][];color?:string;opacity?:number}){
   const positions=useMemo(()=>new Float32Array(points.flat()),[points]);
-  return <lineSegments><bufferGeometry><bufferAttribute attach="attributes-position" args={[positions,3]}/></bufferGeometry>{dashed?<lineDashedMaterial color={color} transparent opacity={opacity} dashSize={.32} gapSize={.22}/>:<lineBasicMaterial color={color} transparent opacity={opacity}/>}</lineSegments>;
+  return <lineSegments><bufferGeometry><bufferAttribute attach="attributes-position" args={[positions,3]}/></bufferGeometry><lineBasicMaterial color={color} transparent opacity={opacity}/></lineSegments>;
 }
+const egoScene=(point:number[]):[number,number,number]=>[-point[1],point[0],point[2]];
 
 function PaperGrid(){
-  const positions=useMemo(()=>{const values:number[]=[];for(let i=-20;i<=20;i+=2){values.push(-20,i,-.04,20,i,-.04,i,-20,-.04,i,20,-.04)}return new Float32Array(values)},[]);
-  return <lineSegments><bufferGeometry><bufferAttribute attach="attributes-position" args={[positions,3]}/></bufferGeometry><lineBasicMaterial color="#a9aaa3" transparent opacity={.23}/></lineSegments>;
+  const positions=useMemo(()=>{const values:number[]=[];for(let i=-50;i<=50;i+=5){values.push(-50,i,-.04,50,i,-.04,i,-50,-.04,i,50,-.04)}return new Float32Array(values)},[]);
+  return <lineSegments><bufferGeometry><bufferAttribute attach="attributes-position" args={[positions,3]}/></bufferGeometry><lineBasicMaterial color="#a9aaa3" transparent opacity={.24}/></lineSegments>;
+}
+function EgoCar(){return <group><mesh position={[0,0,.42]}><boxGeometry args={[1.9,4.2,.8]}/><meshPhysicalMaterial color="#e9e4d7" roughness={.55}/></mesh><mesh position={[0,.15,1]}><boxGeometry args={[1.55,1.9,.7]}/><meshPhysicalMaterial color="#7fa6b5" transparent opacity={.55}/></mesh><Line points={[[0,0,.1],[0,7,.1]]} color="#d85b35" opacity={.75}/></group>}
+
+type CameraPose={origin:[number,number,number];axis:[number,number,number]};
+function CameraGlyph({index,pose,enabled,selected,onSelect}:{index:number;pose:CameraPose;enabled:boolean;selected:boolean;onSelect:(v:SceneSelection)=>void}){
+  const origin=egoScene(pose.origin);const axis=egoScene(pose.axis.map((v,i)=>v+pose.origin[i]));
+  const direction=new THREE.Vector3(...axis).sub(new THREE.Vector3(...origin)).normalize();
+  const up=new THREE.Vector3(0,0,1),side=new THREE.Vector3().crossVectors(direction,up).normalize();
+  const far=new THREE.Vector3(...origin).addScaledVector(direction,7),vertical=new THREE.Vector3(0,0,2.1),horizontal=side.multiplyScalar(3.1);
+  const corners:[number,number,number][]=[far.clone().add(horizontal).add(vertical).toArray(),far.clone().sub(horizontal).add(vertical).toArray(),far.clone().sub(horizontal).sub(vertical).toArray(),far.clone().add(horizontal).sub(vertical).toArray()] as [number,number,number][];
+  const lines:[number,number,number][]=[];corners.forEach(c=>lines.push(origin,c));for(let i=0;i<4;i++)lines.push(corners[i],corners[(i+1)%4]);
+  return <group><mesh position={origin} onPointerDown={e=>{e.stopPropagation();onSelect({kind:"camera",index})}}><boxGeometry args={[.65,.45,.38]}/><meshStandardMaterial color={selected?"#d85b35":enabled?"#171918":"#aaa8a0"}/></mesh><Line points={lines} color={selected?"#d85b35":enabled?"#4f8396":"#aaa8a0"} opacity={enabled?.5:.12}/><Line points={[origin,axis]} color="#171918" opacity={enabled?.5:.12}/></group>;
 }
 
-function EgoCar(){
-  return <group>
-    <mesh position={[0,0,.42]}><boxGeometry args={[1.9,4.2,.8]}/><meshPhysicalMaterial color="#e9e4d7" roughness={.55} clearcoat={.3}/></mesh>
-    <mesh position={[0,.15,1]}><boxGeometry args={[1.55,1.9,.7]}/><meshPhysicalMaterial color="#7fa6b5" transparent opacity={.55} roughness={.2}/></mesh>
-    <Line points={[[0,0,.1],[0,5,.1]]} color="#d95b35" opacity={.7}/>
-  </group>;
+function Ray({origin,points,selected,pixel,onSelect}:{origin:[number,number,number];points:[number,number,number][];selected:number;pixel:[number,number];onSelect:(v:SceneSelection)=>void}){
+  const point=points[selected]??points[0]??origin;return <group><Line points={[origin,points.at(-1)??point]} color="#d85b35" opacity={.9}/><mesh position={point} onPointerDown={e=>{e.stopPropagation();onSelect({kind:"ray",pixel,depth:4+selected})}}><sphereGeometry args={[.28,18,18]}/><meshBasicMaterial color="#d85b35"/></mesh></group>;
+}
+function LiftedDepth({points,probabilities,selected,onSelect}:{points:[number,number,number][];probabilities:number[];selected:number;onSelect:(v:SceneSelection)=>void}){return <group>{points.map((position,index)=><mesh key={index} position={position} onPointerDown={e=>{e.stopPropagation();onSelect({kind:"depth",bin:index,meters:4+index,probability:probabilities[index]??0})}}><sphereGeometry args={[.07+Math.sqrt(Math.max(probabilities[index]??0,0))*.65,index===selected?18:8,index===selected?18:8]}/><meshBasicMaterial color={index===selected?"#d85b35":"#71508a"} transparent opacity={index===selected?1:.25+Math.min(.6,(probabilities[index]??0)*4)}/></mesh>)}</group>}
+
+function LidarCloud({points,lidar2ego,colorMode,pointSize,selected,onSelect}:{points:Float32Array|null;lidar2ego:number[][];colorMode:"height"|"distance"|"intensity";pointSize:number;selected:number|null;onSelect:(v:SceneSelection)=>void}){
+  const prepared=useMemo(()=>{if(!points)return null;const count=points.length/5,positions=new Float32Array(count*3),colors=new Float32Array(count*3),egoPoints=new Float32Array(count*3);for(let i=0;i<count;i++){const x=points[i*5],y=points[i*5+1],z=points[i*5+2],intensity=points[i*5+3];const ex=lidar2ego[0][0]*x+lidar2ego[0][1]*y+lidar2ego[0][2]*z+lidar2ego[0][3],ey=lidar2ego[1][0]*x+lidar2ego[1][1]*y+lidar2ego[1][2]*z+lidar2ego[1][3],ez=lidar2ego[2][0]*x+lidar2ego[2][1]*y+lidar2ego[2][2]*z+lidar2ego[2][3];positions.set([-ey,ex,ez],i*3);egoPoints.set([ex,ey,ez],i*3);const value=colorMode==="height"?Math.max(0,Math.min(1,(ez+3)/7)):colorMode==="distance"?Math.min(1,Math.hypot(ex,ey)/70):Math.min(1,intensity/80);colors.set([.18+.75*value,.55+.25*(1-value),.72-.55*value],i*3)}return{positions,colors,egoPoints}},[points,lidar2ego,colorMode]);
+  if(!prepared||!points)return null;const highlight=selected==null?null:[prepared.positions[selected*3],prepared.positions[selected*3+1],prepared.positions[selected*3+2]] as [number,number,number];
+  return <group><points onPointerDown={(event:ThreeEvent<PointerEvent>)=>{event.stopPropagation();const index=event.index??0;onSelect({kind:"lidar",index,lidar:[points[index*5],points[index*5+1],points[index*5+2]],ego:[prepared.egoPoints[index*3],prepared.egoPoints[index*3+1],prepared.egoPoints[index*3+2]]})}}><bufferGeometry><bufferAttribute attach="attributes-position" args={[prepared.positions,3]}/><bufferAttribute attach="attributes-color" args={[prepared.colors,3]}/></bufferGeometry><pointsMaterial vertexColors size={pointSize} transparent opacity={.72} sizeAttenuation/></points>{highlight&&<mesh position={highlight}><sphereGeometry args={[.32,16,16]}/><meshBasicMaterial color="#ffe36e"/></mesh>}</group>;
 }
 
-function CameraGlyph({index,pose,enabled,selected,onSelect}:{index:number;pose:[number,number,number,number];enabled:boolean;selected:boolean;onSelect:(selection:SceneSelection)=>void}){
-  const [x,y,z,yaw]=pose;
-  const forward:[number,number,number]=[Math.sin(yaw)*5,Math.cos(yaw)*5,0];
-  const left:[number,number,number]=[Math.sin(yaw-.42)*4.2,Math.cos(yaw-.42)*4.2,-1.25];
-  const right:[number,number,number]=[Math.sin(yaw+.42)*4.2,Math.cos(yaw+.42)*4.2,-1.25];
-  const topLeft:[number,number,number]=[Math.sin(yaw-.42)*4.2,Math.cos(yaw-.42)*4.2,1.25];
-  const topRight:[number,number,number]=[Math.sin(yaw+.42)*4.2,Math.cos(yaw+.42)*4.2,1.25];
-  const origin:[number,number,number]=[x,y,z];
-  const corners=[left,right,topRight,topLeft].map(([a,b,c])=>[x+a,y+b,z+c] as [number,number,number]);
-  const lines:[number,number,number][]=[];corners.forEach(corner=>lines.push(origin,corner));for(let i=0;i<4;i+=1)lines.push(corners[i],corners[(i+1)%4]);
-  return <group>
-    <mesh position={origin} rotation={[0,0,-yaw]} onPointerDown={event=>{event.stopPropagation();onSelect({kind:"camera",index})}} onPointerOver={event=>{event.stopPropagation();document.body.style.cursor="pointer"}} onPointerOut={()=>{document.body.style.cursor="default"}}>
-      <boxGeometry args={[.68,.45,.4]}/><meshStandardMaterial color={selected?"#d85b35":enabled?"#171918":"#a7a69f"}/>
-    </mesh>
-    <Line points={lines} color={selected?"#d85b35":enabled?"#5d8797":"#bbb9af"} opacity={enabled?.55:.15}/>
-    <Line points={[origin,[x+forward[0],y+forward[1],z]]} color={selected?"#d85b35":"#202322"} opacity={enabled?.42:.12}/>
-  </group>;
-}
+function VehicleBoxes({vehicles,onSelect}:{vehicles:Vehicle[];onSelect:(v:SceneSelection)=>void}){return <group>{vehicles.map((vehicle,index)=>{const [x,y,z]=vehicle.center_ego,[length,width,height]=vehicle.dimensions,yaw=vehicle.yaw_ego;const corners:[number,number,number][]=[];for(const [lx,ly] of [[-length/2,-width/2],[length/2,-width/2],[length/2,width/2],[-length/2,width/2]] as [number,number][]){const ex=x+lx*Math.cos(yaw)-ly*Math.sin(yaw),ey=y+lx*Math.sin(yaw)+ly*Math.cos(yaw);corners.push(egoScene([ex,ey,z-height/2+.08]))}const lines:[number,number,number][]=[];for(let i=0;i<4;i++)lines.push(corners[i],corners[(i+1)%4]);return <group key={index} onPointerDown={e=>{e.stopPropagation();onSelect({kind:"object",index})}}><Line points={lines} color="#347f76" opacity={.9}/></group>})}</group>}
 
-function Ray({pixel,depthIndex,origin,points,onSelect}:{pixel:[number,number];depthIndex:number;origin:[number,number,number];points:[number,number,number][];onSelect:(selection:SceneSelection)=>void}){
-  const depth=4+depthIndex;
-  const selected=points[depthIndex]??points[0]??origin;
-  const last=points.at(-1)??selected;
-  return <group>
-    <Line points={[origin,last]} color="#d85b35" opacity={.82}/>
-    <mesh position={selected} onPointerDown={event=>{event.stopPropagation();onSelect({kind:"ray",pixel,depth})}}><sphereGeometry args={[.28,22,22]}/><meshBasicMaterial color="#d85b35"/></mesh>
-  </group>;
+function rgbaFor(prob:number,truth:boolean,mode:BevMode,threshold:number,opacity:number):[number,number,number,number]{const predicted=prob>=threshold;if(mode==="gt")return truth?[52,127,118,Math.round(230*opacity)]:[0,0,0,0];if(mode==="threshold")return predicted?[216,91,53,Math.round(215*opacity)]:[0,0,0,0];if(mode==="errors"){if(predicted&&truth)return[52,127,118,Math.round(230*opacity)];if(predicted)return[216,91,53,Math.round(230*opacity)];if(truth)return[113,80,138,Math.round(230*opacity)];return[0,0,0,0]}const alpha=Math.max(0,Math.min(.94,(prob-.08)/.62))*opacity;return[Math.round(255*Math.max(0,Math.min(1,(prob-.18)*1.7))),Math.round(255*Math.max(0,Math.min(1,(prob-.45)*1.8))),Math.round(255*Math.max(.08,.72-prob*.62)),Math.round(255*alpha)]}
+function BevPlane({probability,groundTruth,mode,threshold,opacity,onSelect}:{probability:Float32Array|null;groundTruth:Uint8Array|null;mode:BevMode;threshold:number;opacity:number;onSelect:(v:SceneSelection)=>void}){
+  const texture=useMemo(()=>{const data=new Uint8Array(200*200*4);for(let ix=0;ix<200;ix++)for(let iy=0;iy<200;iy++){const source=ix*200+iy,dest=(ix*200+(199-iy))*4;data.set(rgbaFor(probability?.[source]??0,(groundTruth?.[source]??0)>0,mode,threshold,opacity),dest)}const result=new THREE.DataTexture(data,200,200,THREE.RGBAFormat);result.colorSpace=THREE.SRGBColorSpace;result.magFilter=THREE.NearestFilter;result.minFilter=THREE.LinearFilter;result.needsUpdate=true;return result},[probability,groundTruth,mode,threshold,opacity]);
+  useEffect(()=>()=>texture.dispose(),[texture]);return <mesh position={[0,0,.025]} onPointerDown={event=>{event.stopPropagation();if(!event.uv)return;const ix=Math.min(199,Math.max(0,Math.floor(event.uv.y*200))),iy=Math.min(199,Math.max(0,Math.floor((1-event.uv.x)*200)));onSelect({kind:"cell",index:[ix,iy],center:[ix*.5-49.75,iy*.5-49.75],contributors:[]})}}><planeGeometry args={[100,100]}/><meshBasicMaterial map={texture} transparent side={THREE.DoubleSide} depthWrite={false}/></mesh>;
 }
+function Trajectories({items,selected,onSelect}:{items:Trajectory[];selected:number;onSelect:(v:SceneSelection)=>void}){return <group>{items.map((item,index)=>{const curve=new THREE.CatmullRomCurve3(item.points.map(([x,y])=>new THREE.Vector3(-x,y,.35))),geometry=new THREE.TubeGeometry(curve,32,index===selected ? .14 : .07,8,false);return <mesh key={item.name} geometry={geometry} onPointerMove={e=>{e.stopPropagation();onSelect({kind:"trajectory",index,cost:item.cost,probability:item.probability})}}><meshBasicMaterial color={index===selected?"#d85b35":"#4f8396"} transparent opacity={index===selected?1:.5}/></mesh>})}</group>}
 
-function LiftedDepth({probabilities,depthIndex,points,onSelect}:{probabilities:number[];depthIndex:number;points:[number,number,number][];onSelect:(selection:SceneSelection)=>void}){
-  return <group>{probabilities.map((probability,index)=>{
-    const position=points[index]??[0,0,0];
-    const radius=.08+Math.sqrt(Math.max(0,probability))*.75;
-    return <mesh key={index} position={position} onPointerDown={(event:ThreeEvent<PointerEvent>)=>{event.stopPropagation();onSelect({kind:"depth",bin:index,meters:4+index,probability})}}>
-      <sphereGeometry args={[radius,index===depthIndex?22:12,index===depthIndex?22:12]}/><meshBasicMaterial color={index===depthIndex?"#d85b35":"#6d4a8a"} transparent opacity={.24+Math.min(.7,probability*4)}/>
-    </mesh>})}</group>;
-}
+function CameraMotion({step}:{step:number}){const{camera,gl}=useThree();const controls=useRef<OrbitControls|null>(null);useEffect(()=>{const orbit=new OrbitControls(camera,gl.domElement);orbit.enableDamping=true;orbit.dampingFactor=.075;orbit.minDistance=6;orbit.maxDistance=120;orbit.target.set(0,5,0);orbit.update();controls.current=orbit;return()=>orbit.dispose()},[camera,gl]);useFrame(()=>{const topDown=step>=10&&step<=13,destination=topDown?new THREE.Vector3(0,-2,72):step>=5&&step<=9?new THREE.Vector3(18,-22,16):new THREE.Vector3(22,-27,19),target=topDown?new THREE.Vector3(0,0,0):new THREE.Vector3(0,7,1);camera.position.lerp(destination,.045);controls.current?.target.lerp(target,.045);camera.up.set(0,0,1);controls.current?.update()});return null}
 
-function SplatCloud(){
-  const points=useMemo(()=>{const values:number[]=[];for(let camera=0;camera<6;camera+=1){for(let i=0;i<90;i+=1){const angle=camera*Math.PI/3+(i%11-5)*.035;const r=3+(i*7%38)*.37;values.push(Math.sin(angle)*r,Math.cos(angle)*r,.08+(i%4)*.03)}}return new Float32Array(values)},[]);
-  return <points><bufferGeometry><bufferAttribute attach="attributes-position" args={[points,3]}/></bufferGeometry><pointsMaterial color="#6e4b89" size={.12} transparent opacity={.54} sizeAttenuation/></points>;
-}
-
-function BevPlane({image,onSelect}:{image:string;onSelect:(selection:SceneSelection)=>void}){
-  const loadedTexture=useLoader(THREE.TextureLoader,asset(image));
-  const texture=useMemo(()=>{const copy=loadedTexture.clone();copy.colorSpace=THREE.SRGBColorSpace;copy.magFilter=THREE.NearestFilter;copy.wrapS=THREE.RepeatWrapping;copy.repeat.x=-1;copy.offset.x=1;copy.needsUpdate=true;return copy},[loadedTexture]);
-  useEffect(()=>()=>texture.dispose(),[texture]);
-  return <mesh position={[0,0,.02]} onPointerDown={event=>{
-    event.stopPropagation();if(!event.uv)return;const x=Math.min(199,Math.max(0,Math.floor(event.uv.y*200)));const y=Math.min(199,Math.max(0,Math.floor((1-event.uv.x)*200)));
-    onSelect({kind:"cell",index:[x,y],center:[x*.5-49.75,y*.5-49.75],contributors:[]});
-  }} onPointerOver={event=>{event.stopPropagation();document.body.style.cursor="crosshair"}} onPointerOut={()=>{document.body.style.cursor="default"}}>
-    <planeGeometry args={[36,36]}/><meshBasicMaterial map={texture} transparent opacity={.9} side={THREE.DoubleSide} depthWrite={false}/>
-  </mesh>;
-}
-
-function TrajectoryLines({trajectories,selected,onSelect}:{trajectories:Trajectory[];selected:number;onSelect:(selection:SceneSelection)=>void}){
-  return <group>{trajectories.map((trajectory,index)=>{
-    const curve=new THREE.CatmullRomCurve3(trajectory.points.map(([x,y])=>new THREE.Vector3(x,y,.35)));
-    const geometry=new THREE.TubeGeometry(curve,32,index===selected ? .14 : .075,8,false);
-    return <mesh key={trajectory.name} geometry={geometry} onPointerMove={event=>{event.stopPropagation();onSelect({kind:"trajectory",index,cost:trajectory.cost,probability:trajectory.probability})}} onPointerDown={event=>{event.stopPropagation();onSelect({kind:"trajectory",index,cost:trajectory.cost,probability:trajectory.probability})}}>
-      <meshBasicMaterial color={index===selected?"#d85b35":index===0?"#347f82":"#6c6d68"} transparent opacity={index===selected?1:.45}/>
-    </mesh>})}</group>;
-}
-
-function CameraMotion({step}:{step:number}){
-  const {camera,gl}=useThree();const controls=useRef<OrbitControls|null>(null);
-  useEffect(()=>{const orbit=new OrbitControls(camera,gl.domElement);orbit.enableDamping=true;orbit.dampingFactor=.075;orbit.minDistance=7;orbit.maxDistance=75;orbit.target.set(0,4,0);orbit.update();controls.current=orbit;return()=>orbit.dispose()},[camera,gl]);
-  useFrame(()=>{
-    const destinations:Record<number,[THREE.Vector3,THREE.Vector3]>={
-      0:[new THREE.Vector3(20,-23,17),new THREE.Vector3(0,0,1)],
-      1:[new THREE.Vector3(10,-15,9),new THREE.Vector3(0,8,2)],
-      2:[new THREE.Vector3(7,-11,6),new THREE.Vector3(0,11,1.5)],
-      3:[new THREE.Vector3(20,-18,15),new THREE.Vector3(0,7,0)],
-      4:[new THREE.Vector3(0,-1,39),new THREE.Vector3(0,0,0)],
-      5:[new THREE.Vector3(0,-2,42),new THREE.Vector3(0,0,0)],
-      6:[new THREE.Vector3(0,-3,40),new THREE.Vector3(0,0,0)],
-      7:[new THREE.Vector3(0,-4,41),new THREE.Vector3(0,0,0)],
-      8:[new THREE.Vector3(18,-21,23),new THREE.Vector3(0,8,0)],
-      9:[new THREE.Vector3(18,-23,17),new THREE.Vector3(0,1,0)],
-    };
-    const [position,target]=destinations[step];camera.position.lerp(position,.045);controls.current?.target.lerp(target,.045);camera.up.set(0,0,1);controls.current?.update();
-  });
-  return null;
-}
-
-function World({step,enabledCameras,selectedCamera,pixel,depthIndex,depthProbability,bevImage,trajectories,selectedTrajectory,cameraPoses,liftedPoints,onSelect}:{step:number;enabledCameras:boolean[];selectedCamera:number;pixel:[number,number];depthIndex:number;depthProbability:number[];bevImage:string;trajectories:Trajectory[];selectedTrajectory:number;cameraPoses:[number,number,number,number][];liftedPoints:[number,number,number][];onSelect:(selection:SceneSelection)=>void}){
-  return <>
-    <color attach="background" args={["#f1eee5"]}/><ambientLight intensity={2.1}/><directionalLight position={[12,-8,22]} intensity={2.4}/>
-    <PaperGrid/><EgoCar/><CameraMotion step={step}/>
-    {(step===0||step===1||step===2||step===3||step===7||step===9)&&cameraPoses.map((pose,index)=><CameraGlyph key={index} index={index} pose={pose} enabled={enabledCameras[index]} selected={selectedCamera===index} onSelect={onSelect}/>)}
-    {(step===1||step===2||step===3)&&<Ray pixel={pixel} depthIndex={depthIndex} origin={cameraPoses[selectedCamera].slice(0,3) as [number,number,number]} points={liftedPoints} onSelect={onSelect}/>}
-    {(step===2||step===3)&&<LiftedDepth probabilities={depthProbability} depthIndex={depthIndex} points={liftedPoints} onSelect={onSelect}/>}
-    {(step===3||step===4)&&<SplatCloud/>}
-    {(step>=4&&step!==8)&&<BevPlane image={bevImage} onSelect={onSelect}/>}
-    {step===8&&<><BevPlane image={bevImage} onSelect={onSelect}/><TrajectoryLines trajectories={trajectories} selected={selectedTrajectory} onSelect={onSelect}/></>}
-    <fog attach="fog" args={["#f1eee5",35,78]}/>
-  </>;
-}
-
-export function LssScene(props:{step:number;enabledCameras:boolean[];selectedCamera:number;pixel:[number,number];depthIndex:number;depthProbability:number[];bevImage:string;trajectories:Trajectory[];selectedTrajectory:number;cameraMatrices?:number[][][];liftedPoints:[number,number,number][];onSelect:(selection:SceneSelection)=>void}){
-  const cameraPoses=useMemo(()=>props.cameraMatrices?.map(matrix=>{
-    const translation=[-matrix[1][3],matrix[0][3],matrix[2][3]] as [number,number,number];
-    const opticalAxis=[-matrix[1][2],matrix[0][2],matrix[2][2]];
-    return [...translation,Math.atan2(opticalAxis[0],opticalAxis[1])] as [number,number,number,number];
-  })??FALLBACK_CAMERAS,[props.cameraMatrices]);
-  const {cameraMatrices,...worldProps}=props;
-  void cameraMatrices;
-  return <div className="lss-scene" aria-label="Interactive 3D LSS geometry scene"><Canvas dpr={[1,1.7]} camera={{position:[20,-23,17],fov:39,near:.1,far:130}} gl={{antialias:true,alpha:false}}><World {...worldProps} cameraPoses={cameraPoses}/></Canvas></div>;
+export function LssScene(props:{step:number;enabledCameras:boolean[];selectedCamera:number;pixel:[number,number];depthIndex:number;depthProbability:number[];trajectories:Trajectory[];selectedTrajectory:number;cameraMatrices?:number[][][];liftedPoints:[number,number,number][];lidar:Float32Array|null;lidar2ego:number[][];lidarColor:"height"|"distance"|"intensity";lidarPointSize:number;selectedLidar:number|null;vehicles:Vehicle[];bevProbability:Float32Array|null;groundTruth:Uint8Array|null;bevMode:BevMode;threshold:number;bevOpacity:number;onSelect:(v:SceneSelection)=>void}){
+  const cameraPoses=useMemo<CameraPose[]>(()=>props.cameraMatrices?.map(matrix=>({origin:matrix.slice(0,3).map(row=>row[3]) as [number,number,number],axis:matrix.slice(0,3).map(row=>row[2]) as [number,number,number]}))??[],[props.cameraMatrices]);
+  const showCameras=props.step<=9||props.step===12,showRay=props.step>=5&&props.step<=9,showLift=props.step>=7&&props.step<=9,showBev=props.step>=10,showLidar=props.step===12,showBoxes=props.step===12;
+  return <div className="lss-scene" aria-label="Interactive 3D LSS geometry scene"><Canvas dpr={[1,1.7]} camera={{position:[22,-27,19],fov:39,near:.1,far:180}} gl={{antialias:true,alpha:false}}><color attach="background" args={["#f1eee5"]}/><ambientLight intensity={2}/><directionalLight position={[12,-8,24]} intensity={2.2}/><PaperGrid/><EgoCar/><CameraMotion step={props.step}/>{showCameras&&cameraPoses.map((pose,index)=><CameraGlyph key={index} index={index} pose={pose} enabled={props.enabledCameras[index]} selected={props.selectedCamera===index} onSelect={props.onSelect}/>)}{showRay&&cameraPoses[props.selectedCamera]&&<Ray origin={egoScene(cameraPoses[props.selectedCamera].origin)} points={props.liftedPoints} selected={props.depthIndex} pixel={props.pixel} onSelect={props.onSelect}/>} {showLift&&<LiftedDepth points={props.liftedPoints} probabilities={props.depthProbability} selected={props.depthIndex} onSelect={props.onSelect}/>} {showBev&&<BevPlane probability={props.bevProbability} groundTruth={props.groundTruth} mode={props.bevMode} threshold={props.threshold} opacity={props.bevOpacity} onSelect={props.onSelect}/>} {showLidar&&<LidarCloud points={props.lidar} lidar2ego={props.lidar2ego} colorMode={props.lidarColor} pointSize={props.lidarPointSize} selected={props.selectedLidar} onSelect={props.onSelect}/>} {showBoxes&&<VehicleBoxes vehicles={props.vehicles} onSelect={props.onSelect}/>} {props.step===14&&<Trajectories items={props.trajectories} selected={props.selectedTrajectory} onSelect={props.onSelect}/>}<fog attach="fog" args={["#f1eee5",65,150]}/></Canvas></div>;
 }

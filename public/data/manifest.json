@@ -1,17 +1,19 @@
 {
-  "model_artifacts_sha256": "cb36c8e3c2890c659a682691b06e6be9f4fc4bb768cd4b9312b1a4f2060773e6",
-  "model_features_sha256": "aef9b97140d241de0aefe5ff98a6d600482ef29bbcc89cfb3fe63e359b851edb",
-  "rig_sha256": "1964a271122074c70470929424b5ca07ef83245319ce96a0e898f3ea4cbe43e0",
+  "model_artifacts_sha256": "5ad419e2468bdded5ee88a779734a4664a37d5d415cf81ffb995c31f6e9b52de",
+  "model_features_sha256": "6580cf96932f02633c501ad0da03c525ef0a12ad2059235d08205fef5e705936",
+  "rig_sha256": "23e38a8055ef49f05439d596e28ddfbccc32f345a75048eb2a7ac912dd9959cf",
+  "alignment_sha256": "db98b14c5a01f4f81c05f69fcb93495ec3ff75f4bb186c7157345fb27dd5a503",
+  "lidar_sha256": "5f8f9b1b199ceff7d41cd319021a7a7b02dcd44d41f622a9e65a6a4a6be3cbdb",
   "variant_hashes": {
-    "all-cameras": "a913e65a55e774482071ee4c3de5b4097b466a0c0feade0887afa377c9d44068",
-    "drop-cam-front-left": "af22b5b2cc94f4a01d21798a9c1a2c6277b378ea4c9789da1316982571813e59",
-    "drop-cam-front": "21891f07fe26132481d6da5ccf7cd5fb92b18ebe183244d747daf1141831b73e",
-    "drop-cam-front-right": "44f1c4317b8e10ae0a0cae863d7a0875c3d80fc2b5cadd9055ec943785ab33e3",
-    "drop-cam-back-left": "5178f575d8ad768d7aacd39d630fbbaf552493c903aeaf8eaf56d282e4d1f869",
-    "drop-cam-back": "274b0f9ad9bc78750c170e1ca8c06573c7379182c429ac9c46bd20e6d9f4ede8",
-    "drop-cam-back-right": "b24b989569db8df8b31685d251bbaba1c375b014f12e0c24cb92dc656a335bb2",
-    "front-yaw--3": "653141c7e76cd5cba889b641e9a168efb337bc34c0fb2742e78f50a90454e4d4",
-    "front-yaw-+0": "a913e65a55e774482071ee4c3de5b4097b466a0c0feade0887afa377c9d44068",
-    "front-yaw-+3": "808b759aba599e744362ebc3d7a30d0e2443bea3c39b87cfdef1f709786f0a0a"
+    "all-cameras": "9ebecb7da3993369f2d95b27faeb31788653ad370c50cfc9daceda9b36366e08",
+    "drop-cam-front-left": "e3c8b6f378919878aa1cad44f9dbcf4a704009ae331be9888195d40495de339e",
+    "drop-cam-front": "45425acf6332391407f97e29a5ad901c30e9537f13ac72ae82c28392deb1e05b",
+    "drop-cam-front-right": "5bc092c82741d394b68ccf65287d41b0c0d57b301b496b54d1041d5acff1ce7d",
+    "drop-cam-back-left": "e4d52c75902e113efcf7286496cfe6a9cb33c609d640a11f515c7375ec93de28",
+    "drop-cam-back": "83b1f3af7d2d658dab65d07ab263f03404603020ae237a83a2be4bf464442ffd",
+    "drop-cam-back-right": "2f15b6918b277b775acfd1d2d053b370eb35cded0be9fef7fdb4f612560d630c",
+    "front-yaw--3": "07f6ce65ad7b708595cbda19a6b384ea3f4e4da3f11df55b1ad2ab6854bacbcd",
+    "front-yaw-+0": "9ebecb7da3993369f2d95b27faeb31788653ad370c50cfc9daceda9b36366e08",
+    "front-yaw-+3": "cae3e02a7611ee629e3945dccea5296a243f52ad067ac2857a4b8ad6c5a5c2d6"
   }
 }

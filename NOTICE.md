@@ -6,7 +6,7 @@ Original code in this repository is released under the MIT License. The visual s
 
 ## nuScenes and OpenMMLab demo assets
 
-The six camera images and metadata originate from the nuScenes dataset through the pinned MMDetection3D demo. nuScenes data is subject to the [nuScenes Dataset Terms of Use](https://www.nuscenes.org/terms-of-use), including non-commercial restrictions. The images are included solely to explain the fixed research example; redistribution or downstream use must independently comply with those terms.
+The six camera images, one LIDAR_TOP frame, and metadata originate from the nuScenes dataset through the pinned MMDetection3D demo. nuScenes data is subject to the [nuScenes Dataset Terms of Use](https://www.nuscenes.org/terms-of-use), including non-commercial restrictions. These fixed-sample assets are included solely to explain and audit the research example; redistribution or downstream use must independently comply with those terms.
 
 MMDetection3D source is Apache-2.0 licensed. This repository does not copy MMDetection3D source; it consumes pinned demo assets and records their hashes.
 

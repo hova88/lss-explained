@@ -13,6 +13,7 @@ files=(
   "n015-2018-07-24-11-22-45+0800__CAM_BACK__1532402927637525.jpg"
   "n015-2018-07-24-11-22-45+0800__CAM_BACK_LEFT__1532402927647423.jpg"
   "n015-2018-07-24-11-22-45+0800__CAM_BACK_RIGHT__1532402927627893.jpg"
+  "n015-2018-07-24-11-22-45+0800__LIDAR_TOP__1532402927647951.pcd.bin"
 )
 for file in "${files[@]}"; do
   curl -L --fail --retry 3 -o "$repo_root/.cache/openmmlab/$file" "$mm3d_base/$file"

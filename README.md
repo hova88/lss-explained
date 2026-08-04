@@ -1,16 +1,17 @@
 # Lift-Splat-Shoot Geometry Lab
 
-An interactive, source-audited explanation of the original ECCV 2020 **Lift, Splat, Shoot** architecture. Six real nuScenes cameras from one timestamp are followed through latent depth, camera-to-ego geometry, pillar sum pooling, BEV encoding, robustness probes, and the paper's trajectory-scoring equation.
+An interactive, bilingual, source-audited explanation of the original ECCV 2020 **Lift, Splat, Shoot** architecture. Fifteen chapters follow one real nuScenes sample through every coordinate frame, latent depth, camera-to-ego geometry, pillar sum pooling, BEV encoding, robustness probes, and the paper's trajectory-scoring equation.
 
 **Live:** https://hova88.github.io/lss-explained/
 
-This is the camera-to-BEV companion to [pointpillars-explained](https://github.com/hova88/pointpillars-explained). It keeps the same paper-like full-screen grammar, chapter timeline, 3D camera, autoplay, keyboard/touch controls, and click-to-inspect cards.
+This is the camera-to-BEV companion to [pointpillars-explained](https://github.com/hova88/pointpillars-explained). Version 2 adds a persistent transform graph and synchronized camera/3D/BEV evidence using the sample's 34,688-point LiDAR scan. LiDAR is a reference overlay only and is never passed into LSS inference.
 
 ## Evidence boundary
 
 The experience labels three kinds of claims:
 
-- **REAL SAMPLE** — calibration, images, annotations, and artifacts derived from the fixed nuScenes sample `ca9a282c9e77460f8360f564131a8af5`.
+- **REAL SAMPLE** — calibration, images, LiDAR reference, annotations, and artifacts derived from the fixed nuScenes sample `ca9a282c9e77460f8360f564131a8af5`.
+- **CHECKPOINT** — tensors or rasters produced by a strict load of the pinned official checkpoint.
 - **PAPER** — metrics and experimental claims transcribed from the ECCV 2020 paper.
 - **TEACHING** — explanatory geometry or equation-driven reconstructions. Chapter 9 is teaching-only because the public official repository does not ship a planning checkpoint.
 
@@ -47,7 +48,9 @@ Inputs are downloaded into ignored `.cache/` storage. The exporter writes only d
 ## Controls
 
 - Drag to orbit; wheel or pinch to zoom.
-- Click cameras, rays, depth bins, BEV cells, and trajectories to inspect them.
+- Click cameras, pixels, exact 8×22 feature anchors, depth bins, LiDAR points, GT boxes, BEV cells, and trajectories to inspect them.
+- Use the 中文/EN switch without losing the current chapter or selection.
+- In the truth lab, switch probability/threshold/GT/error layers and adjust LiDAR color, point size, confidence threshold, and opacity.
 - Arrow keys move between chapters; Space toggles autoplay; Escape closes the inspector.
 - The UI honors `prefers-reduced-motion`.
 

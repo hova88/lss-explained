@@ -17,6 +17,8 @@ LSS 的核心问题因此是：已知任意数量相机的图像、内参和外�
 
 本文使用 nuScenes sample `ca9a282c9e77460f8360f564131a8af5`。六张 JPEG、`cam2img`、`cam2ego`、`lidar2cam`、`ego2global` 来自固定 commit 的 OpenMMLab demo；模型结果由固定 commit 的官方 LSS 代码严格加载 `model525000.pt` 后离线导出。浏览器不下载权重，也不运行 PyTorch。
 
+交互站 v2 把学习路线扩展为 15 章：为什么需要 BEV、坐标系账本、矩阵来源、矩阵组合、图像预处理、像素射线、特征 anchor、Lift、精确 `get_geometry`、六相机 ego 对齐、Splat、BEV 编码器、真实样本核验、训练与鲁棒性、Shoot 与局限。下面正文先解释模型主线，后面的坐标附录再把所有容易混淆的细节逐一展开。
+
 ## 1. 任意相机阵列：先把输入的语义说清楚
 
 这一帧有 `CAM_FRONT_LEFT`、`CAM_FRONT`、`CAM_FRONT_RIGHT`、`CAM_BACK_LEFT`、`CAM_BACK`、`CAM_BACK_RIGHT` 六个视角。所谓“任意阵列”不等于模型完全不受覆盖范围影响，而是计算图不要求相机在张量的某个固定槽位承担固定语义。
@@ -192,6 +194,194 @@ p(τ | o) = exp(-Σ c_o(x,y)) / Στ' exp(-Σ c_o(x,y))
 算法单元测试覆盖矩阵逆、cam→ego 组合、softmax、外积、半开 voxel 边界、rank、QuickCumsum 与朴素 sum 的等价、相机排列不变、刚体变换等变，以及轨迹成本和概率归一化。静态构建还检查 `/lss-explained` base path 下的全部资源。
 
 这套契约刻意把“我在论文里读到的”“我用官方 checkpoint 算出的”和“我为了教学构造的”分开。好的可视化不应靠模糊证据来源换取戏剧性；它应该让每一次点击都能回到一条明确的数学、代码或数据链路。
+
+## 12. 坐标附录一：先彻底理解“坐标”和“点”
+
+一个几何点本身并没有固定的三元数。`[3, 1, 0.5]` 只有在说明“相对于哪个原点、沿哪三根轴、用什么单位”之后才有意义。同一个物理点在 LiDAR、相机、ego 和 global 中会拥有不同数值。
+
+本站采用列向量，并把从 A 到 B 的主动变换写成 `T_A→B`：
+
+```text
+p_B = T_A→B p_A
+```
+
+齐次点写成 `[x,y,z,1]ᵀ`，方向写成 `[x,y,z,0]ᵀ`。末尾的 `1` 使平移能够通过矩阵乘法作用于点；方向末尾为 `0`，所以不受平移影响。刚体变换为：
+
+```text
+T = [ R  t ]
+    [ 0  1 ]
+```
+
+其中 `R` 的三列可以理解为源坐标系三根单位轴在目标坐标系中的表示。对 `cam2ego` 而言，第三列正是相机 `+z_cam` 光轴在 ego 中的方向。这也是为什么三维页面不再手工猜测 yaw，而是直接使用第三列绘制相机朝向。
+
+合法旋转矩阵满足：
+
+```text
+RᵀR = I
+det(R) = +1
+R⁻¹ = Rᵀ
+```
+
+若行列式为 `−1`，通常意味着混入了反射；若 `RᵀR` 明显不接近单位阵，则它不是纯旋转。v2 的矩阵检查器会显示这些残差。
+
+刚体变换的逆不是把所有元素分别取倒数：
+
+```text
+T_A→B⁻¹ = T_B→A
+          = [ Rᵀ  −Rᵀt ]
+            [  0      1 ]
+```
+
+为什么平移是 `−Rᵀt` 而不是简单 `−t`？因为 `t` 原本用 B 的轴表达；反向移动前必须先把它旋回 A 的轴。
+
+## 13. 坐标附录二：矩阵如何从 nuScenes 元数据而来
+
+nuScenes 将两类信息分开保存：
+
+- `calibrated_sensor`：传感器相对于车体 ego 的固定外参，包括平移、四元数旋转和相机内参；
+- `ego_pose`：某个 `sample_data` 采集时刻，ego 相对于 global 地图的位姿。
+
+四元数按 `[w,x,y,z]` 归一化后转换为 `R(q)`，再与平移组成齐次矩阵。于是一个相机点进入 global 的完整链是：
+
+```text
+p_global = T_ego(cam time)→global · T_cam→ego · p_cam
+```
+
+如果要把一个 LiDAR 时刻的点投到相机，必须跨过两个不同的 ego pose：
+
+```text
+p_cam = T_ego(cam time)→cam
+      · T_global→ego(cam time)
+      · T_ego(lidar time)→global
+      · T_lidar→ego(lidar time)
+      · p_lidar
+```
+
+OpenMMLab 已把这条链整理为固定样本的直接 `lidar2cam`。因此一般不能用：
+
+```text
+inv(cam2ego) · lidar2ego
+```
+
+替代直接矩阵。后者只连接两组静态 calibrated-sensor 外参，忽略了相机和 LiDAR 几十毫秒内不同的 ego pose。本站会同时显示传感器时间差和“直接矩阵 vs 静态简化”的最大元素残差；这不是 LSS 相机推理所需步骤，而是准确投影 LiDAR 参考点时必须理解的时序问题。
+
+原始 LSS 在单帧 camera-to-BEV 路径中使用每台相机的 `K` 和 `cam2ego`，不使用 LiDAR，也不把点先变到 global。global 主要在数据集的跨时刻和地图语义中承担共同参考。
+
+## 14. 坐标附录三：原图、网络图和 8×22 anchor
+
+固定图片原始大小为 1600×900。验证预处理把它缩放为 352×198，再从纵向第 48 行开始裁出 352×128。若用二维仿射表达：
+
+```text
+[u_net, v_net, 1]ᵀ
+= post_rot [u_raw, v_raw, 1]ᵀ + post_trans
+```
+
+在本站固定设置中，`post_rot=diag(0.22,0.22,1)`，`post_trans=[0,-48,0]ᵀ`。反投影必须反向执行：
+
+```text
+u_raw_h = post_rot⁻¹ (u_net_h − post_trans)
+```
+
+还要注意，EfficientNet 输出的 8×22 位置并不等价于把 128×352 均匀切成左闭右开的 16×16 小块。官方 `create_frustum` 写的是：
+
+```text
+xs = linspace(0, 351, 22)
+ys = linspace(0, 127, 8)
+```
+
+所以第 `(h,w)` 个实际采样位置是：
+
+```text
+u_w = 351w / 21
+v_h = 127h / 7
+```
+
+v1 页面虽然导出了完整张量，但点击任意像素后仍固定显示 `[4,11]` 的深度分布。v2 已修正：点击先找到最近官方 anchor，然后使用扁平索引：
+
+```text
+depth offset = camera·41·8·22 + d·8·22 + h·22 + w
+context offset = camera·64·8·22 + c·8·22 + h·22 + w
+```
+
+因此屏幕红点、紫色 anchor、41 维 depth、64 维 context、三维采样点和最终 BEV cell 都是同一个真实特征位置。
+
+## 15. 坐标附录四：完整相机反投影与回投验证
+
+选定网络 anchor `(u',v')` 和深度 `d` 后，逐步计算：
+
+```text
+1. q_net = [u', v', 1]ᵀ
+2. q_raw = post_rot⁻¹(q_net − post_trans)
+3. q_scaled = [d·q_raw.x, d·q_raw.y, d]ᵀ
+4. p_cam = K⁻¹ q_scaled
+5. p_ego = R_cam→ego p_cam + t_cam→ego
+```
+
+这里 `d` 是 `z_cam`，不是欧氏距离 `||p_cam||`。对于偏离光轴的点，两者并不相等。官方实现先组合 `R K⁻¹` 只是为了批量效率，数学意义不变。
+
+反向 sanity check 为：
+
+```text
+p_cam_again = Rᵀ(p_ego − t)
+q = K p_cam_again
+u_raw = q.x/q.z
+v_raw = q.y/q.z
+q_net_again = post_rot [u_raw,v_raw,1]ᵀ + post_trans
+```
+
+正确实现应回到原 anchor，只剩浮点误差。本站还离线保存六相机各三个位置——首个、中心和末尾 frustum anchor——共 18 个官方 `get_geometry` 黄金结果，用于防止浏览器实现悄悄出现乘法顺序、转置或轴符号错误。
+
+## 16. 坐标附录五：BEV 数组为什么容易看反
+
+LSS 的网格范围为 x、y 各 `[-50,50)`，分辨率 0.5 米：
+
+```text
+ix = floor((x_ego + 50) / 0.5)
+iy = floor((y_ego + 50) / 0.5)
+```
+
+数组索引 `[ix,iy]` 的第一维是 ego 前后，第二维是 ego 左右；它不是普通图片的 `[row down,column right]` 语义。本站规定前方显示在上、左侧显示在左。对 200×200 屏幕归一化坐标：
+
+```text
+screen_u = 1 − (iy + 0.5)/200
+screen_v = 1 − (ix + 0.5)/200
+```
+
+之所以两个式子都有 `1−`，是因为屏幕 u 向右而 ego y 向左，屏幕 v 向下而 ego x 向前/向上。v2 删除了纹理层的临时 `repeat.x=-1`，模型概率、GT、LiDAR occupancy、GT 框和点击反查全部调用同一映射。测试固定检查 ego 原点、四角、前/后/左/右地标和 round trip。
+
+原始相机图和 BEV 热图不应具有相同二维轮廓：相机图是透视投影，一个远处车辆可能只有几十像素；BEV 是米制俯视网格，物体大小接近真实尺寸。正确的“对应”不是让两张图看起来相似，而是选中同一物理证据后，能够沿 camera pixel → ray/depth → ego → BEV cell 往返追踪。
+
+## 17. 坐标附录六：LiDAR 三视图只用于核验
+
+固定 OpenMMLab demo 同时提供这一帧的 `LIDAR_TOP` 文件，包含 34,688 个 `[x,y,z,intensity,ring]` float32 点。v2 将原始二进制文件直接提交，并记录 SHA-256；浏览器用 typed array 读取，不进行模型推理。
+
+同一点有两条可核验路径：
+
+```text
+LiDAR → lidar2ego → ego → BEV cell
+LiDAR → lidar2cam → camera → K → raw image pixel
+```
+
+只有 `z_cam>0` 且 `(u,v)` 落在 1600×900 内的点才绘制到相机。点击一个投影点会同时高亮它的原始 LiDAR 坐标、ego 坐标、BEV index、相机坐标、像素坐标和深度。这样可以直接回答：某个 BEV 热点在真实图片里是什么、轴是否翻转、相机朝向是否正确。
+
+LiDAR overlay 的证据标签始终为 `REFERENCE LIDAR · NOT MODEL INPUT`。它不能用来暗示 LSS 在推理时获得了深度真值；LSS 的 depth α 仍然只来自相机网络和最终任务监督。
+
+## 18. 如何阅读单帧模型概率
+
+车辆头输出 logit `ℓ(x,y)`，网页显示：
+
+```text
+p(x,y)=sigmoid(ℓ)=1/(1+exp(−ℓ))
+```
+
+v2 默认使用低概率透明的连续色带，并提供 threshold、GT 和 errors 模式。给定阈值后：
+
+- TP：模型和 GT 都是车辆；
+- FP：模型认为是车辆、GT 不是；
+- FN：GT 是车辆、模型没有超过阈值；
+- IoU：`TP/(TP+FP+FN)`。
+
+这些数字只诊断固定帧和当前阈值，不可代替论文在完整验证集上的 32.06/32.07 IoU。相机 dropout 或 yaw 切换同样只是同一帧、同一 checkpoint 的局部变化。
 
 ## 参考
 

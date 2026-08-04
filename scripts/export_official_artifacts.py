@@ -34,6 +34,7 @@ PUBLIC = ROOT / "public" / "data"
 LSS_COMMIT = "2903467c91ee9c12f0917a12c22ab1f04e607ae0"
 MM3D_COMMIT = "fe25f7a51d36e3702f961e198894580d83c4387b"
 SAMPLE_TOKEN = "ca9a282c9e77460f8360f564131a8af5"
+LIDAR_FILE = "n015-2018-07-24-11-22-45+0800__LIDAR_TOP__1532402927647951.pcd.bin"
 CAMERAS = [
     "CAM_FRONT_LEFT", "CAM_FRONT", "CAM_FRONT_RIGHT",
     "CAM_BACK_LEFT", "CAM_BACK", "CAM_BACK_RIGHT",
@@ -164,7 +165,7 @@ def preprocess_image(path: Path):
     post_rot[0, 0] = resize
     post_rot[1, 1] = resize
     post_trans = np.array([-crop_w, -crop_h, 0], dtype=np.float32)
-    return tensor, post_rot, post_trans, {
+    return tensor, transformed, post_rot, post_trans, {
         "resize": resize, "resize_dims": list(resized), "crop": list(crop),
         "flip": False, "rotate_degrees": 0,
     }
@@ -172,10 +173,10 @@ def preprocess_image(path: Path):
 
 def heatmap_rgba(probability: np.ndarray) -> Image.Image:
     p = np.clip(probability, 0, 1)
-    red = np.clip(1.8 * p, 0, 1)
-    green = np.clip(2.1 * p - 0.25, 0, 1)
-    blue = np.clip(1.25 - 1.5 * p, 0, 1)
-    alpha = np.clip(0.1 + p * 0.9, 0, 1)
+    red = np.clip((p - 0.18) * 1.7, 0, 1)
+    green = np.clip((p - 0.45) * 1.8, 0, 1)
+    blue = np.clip(0.72 - p * 0.62, 0.08, 0.72)
+    alpha = np.clip((p - 0.08) / 0.62, 0, 0.94)
     rgba = np.stack([red, green, blue, alpha], axis=-1)
     return Image.fromarray(np.uint8(rgba * 255), "RGBA")
 
@@ -212,6 +213,7 @@ def vehicle_gt_mask(sample: dict) -> tuple[np.ndarray, list[dict]]:
 def main() -> None:
     PUBLIC.mkdir(parents=True, exist_ok=True)
     (PUBLIC / "images").mkdir(exist_ok=True)
+    (PUBLIC / "network-images").mkdir(exist_ok=True)
     (PUBLIC / "model").mkdir(exist_ok=True)
     pkl_path = SOURCE / "n015-2018-07-24-11-22-45+0800.pkl"
     with pkl_path.open("rb") as handle:
@@ -220,16 +222,30 @@ def main() -> None:
     if sample["token"] != SAMPLE_TOKEN:
         raise RuntimeError(f"Unexpected sample token {sample['token']}")
 
+    lidar_source = SOURCE / LIDAR_FILE
+    if not lidar_source.exists():
+        raise RuntimeError(f"Missing pinned LiDAR input: {lidar_source}")
+    lidar_output = PUBLIC / "lidar-frame.bin"
+    shutil.copyfile(lidar_source, lidar_output)
+    lidar_points = np.fromfile(lidar_source, dtype="<f4").reshape(-1, 5)
+    if lidar_points.shape != (34688, 5) or not np.isfinite(lidar_points).all():
+        raise RuntimeError(f"Unexpected LiDAR tensor: {lidar_points.shape}")
+
     tensors, rotations, translations, intrinsics, post_rots, post_trans = [], [], [], [], [], []
     camera_contract = []
-    source_hashes = {"demo_pickle": sha256(pkl_path), "checkpoint": sha256(CHECKPOINT)}
+    source_hashes = {
+        "demo_pickle": sha256(pkl_path), "checkpoint": sha256(CHECKPOINT),
+        "lidar_frame": sha256(lidar_source),
+    }
     for camera in CAMERAS:
         record = sample["images"][camera]
         source_path = SOURCE / Path(record["img_path"]).name
         output_name = camera.lower().replace("_", "-") + ".jpg"
         output_path = PUBLIC / "images" / output_name
         shutil.copyfile(source_path, output_path)
-        tensor, post_rot, post_tran, augmentation = preprocess_image(source_path)
+        tensor, network_image, post_rot, post_tran, augmentation = preprocess_image(source_path)
+        network_name = camera.lower().replace("_", "-") + ".jpg"
+        network_image.save(PUBLIC / "network-images" / network_name, quality=91)
         cam2ego = np.asarray(record["cam2ego"], dtype=np.float32)
         tensors.append(tensor)
         rotations.append(torch.from_numpy(cam2ego[:3, :3]))
@@ -240,11 +256,18 @@ def main() -> None:
         source_hashes[camera] = sha256(source_path)
         camera_contract.append({
             "name": camera, "image": f"/data/images/{output_name}",
+            "network_image": f"/data/network-images/{network_name}",
             "image_sha256": source_hashes[camera], "cam2img": record["cam2img"],
             "cam2ego": record["cam2ego"], "lidar2cam": record["lidar2cam"],
             "sample_data_token": record["sample_data_token"], "timestamp": record["timestamp"],
             "augmentation": augmentation, "post_rot": post_rot.tolist(),
             "post_trans": post_tran.tolist(),
+            "matrix_metadata": {
+                "cam2img": {"from_frame": "camera", "to_frame": "original_image", "source": "OpenMMLab pinned demo"},
+                "cam2ego": {"from_frame": camera, "to_frame": "ego", "source": "nuScenes calibrated_sensor via OpenMMLab"},
+                "lidar2cam": {"from_frame": "LIDAR_TOP", "to_frame": camera, "source": "OpenMMLab pose-compensated conversion"},
+                "post_transform": {"from_frame": "original_image", "to_frame": "network_image", "source": "LSS validation preprocessing"},
+            },
         })
 
     images = torch.stack(tensors).unsqueeze(0)
@@ -293,8 +316,9 @@ def main() -> None:
                 "image": f"/data/model/{image_name}",
                 "image_sha256": sha256(PUBLIC / "model" / image_name),
             }
+            return probability
 
-        infer_variant("all-cameras", geometry, camera_features)
+        all_probability = infer_variant("all-cameras", geometry, camera_features)
         for camera_index, camera in enumerate(CAMERAS):
             kept = [index for index in range(6) if index != camera_index]
             infer_variant(
@@ -320,8 +344,80 @@ def main() -> None:
     gt_image = Image.fromarray(np.uint8(gt_mask * 255), "L")
     gt_image.save(PUBLIC / "model" / "vehicle-gt.png")
 
+    lidar2ego = np.asarray(sample["lidar_points"]["lidar2ego"], dtype=np.float64)
+    lidar_h = np.concatenate([lidar_points[:, :3].astype(np.float64), np.ones((len(lidar_points), 1))], axis=1)
+    lidar_ego = (lidar2ego @ lidar_h.T).T[:, :3]
+    lidar_occupancy = np.zeros((200, 200), dtype=np.uint16)
+    lidar_indices = np.floor((lidar_ego[:, :2] + 50.0) / 0.5).astype(np.int64)
+    lidar_kept = (
+        (lidar_indices[:, 0] >= 0) & (lidar_indices[:, 0] < 200) &
+        (lidar_indices[:, 1] >= 0) & (lidar_indices[:, 1] < 200)
+    )
+    np.add.at(lidar_occupancy, (lidar_indices[lidar_kept, 0], lidar_indices[lidar_kept, 1]), 1)
+
+    projection_contract = []
+    for camera in camera_contract:
+        lidar2cam = np.asarray(camera["lidar2cam"], dtype=np.float64)
+        camera_points = (lidar2cam @ lidar_h.T).T[:, :3]
+        projected = (np.asarray(camera["cam2img"], dtype=np.float64) @ camera_points.T).T
+        uv = projected[:, :2] / np.maximum(projected[:, 2:3], 1e-12)
+        visible = (
+            (camera_points[:, 2] > 0) & (uv[:, 0] >= 0) & (uv[:, 0] < 1600) &
+            (uv[:, 1] >= 0) & (uv[:, 1] < 900)
+        )
+        static_chain = np.linalg.inv(np.asarray(camera["cam2ego"], dtype=np.float64)) @ lidar2ego
+        rotation = np.asarray(camera["cam2ego"], dtype=np.float64)[:3, :3]
+        projection_contract.append({
+            "camera": camera["name"], "visible_points": int(visible.sum()),
+            "camera_timestamp": camera["timestamp"],
+            "delta_to_lidar_ms": float((camera["timestamp"] - sample["timestamp"]) * 1000),
+            "direct_vs_static_chain_max_abs": float(np.max(np.abs(lidar2cam - static_chain))),
+            "rotation_det": float(np.linalg.det(rotation)),
+            "rotation_orthogonality_max_error": float(np.max(np.abs(rotation.T @ rotation - np.eye(3)))),
+        })
+
+    def single_frame_stats(threshold):
+        predicted = all_probability >= threshold
+        truth = gt_mask > 0
+        tp = int(np.logical_and(predicted, truth).sum())
+        fp = int(np.logical_and(predicted, ~truth).sum())
+        fn = int(np.logical_and(~predicted, truth).sum())
+        tn = int(np.logical_and(~predicted, ~truth).sum())
+        union = tp + fp + fn
+        return {"threshold": threshold, "tp": tp, "fp": fp, "fn": fn, "tn": tn, "iou": tp / union if union else 1.0}
+
+    geometry_gold = []
+    for camera_index in range(6):
+        for depth_index, row, column in [(0, 0, 0), (20, 4, 11), (40, 7, 21)]:
+            geometry_gold.append({
+                "camera": CAMERAS[camera_index], "index": [depth_index, row, column],
+                "processed_anchor": [float(model.frustum[depth_index, row, column, 0]),
+                                     float(model.frustum[depth_index, row, column, 1])],
+                "depth": float(model.frustum[depth_index, row, column, 2]),
+                "ego": geometry_numpy[camera_index, depth_index, row, column].astype(float).tolist(),
+            })
+
+    alignment_contract = {
+        "schema_version": "2.0.0", "sample_token": SAMPLE_TOKEN,
+        "evidence": "pinned-lidar-and-calibration-derived",
+        "lidar": {
+            "path": "/data/lidar-frame.bin", "sha256": source_hashes["lidar_frame"],
+            "shape": [int(lidar_points.shape[0]), 5], "dtype": "float32-little-endian",
+            "fields": ["x", "y", "z", "intensity", "ring"], "frame": "LIDAR_TOP",
+            "xyz_min": lidar_points[:, :3].min(axis=0).astype(float).tolist(),
+            "xyz_max": lidar_points[:, :3].max(axis=0).astype(float).tolist(),
+        },
+        "camera_projections": projection_contract,
+        "lidar_occupancy": {"axis_order": ["ego_x_cell", "ego_y_cell"], "counts": encode_array(lidar_occupancy, "uint16")},
+        "single_frame_diagnostics": [single_frame_stats(value) for value in (0.3, 0.5, 0.7)],
+        "geometry_gold": geometry_gold,
+        "warning": "LiDAR is a reference visualization and is not an input to LSS camera inference.",
+    }
+    alignment_path = PUBLIC / "alignment.json"
+    alignment_path.write_text(json.dumps(alignment_contract, separators=(",", ":")), encoding="utf-8")
+
     features_contract = {
-        "schema_version": "1.0.0", "sample_token": SAMPLE_TOKEN,
+        "schema_version": "2.0.0", "sample_token": SAMPLE_TOKEN,
         "evidence": "official-checkpoint-derived", "checkpoint_sha256": source_hashes["checkpoint"],
         "depth_probabilities": encode_array(depth.detach().cpu().numpy().reshape(6, 41, 8, 22)),
         "context_features": encode_array(context.detach().cpu().numpy().reshape(6, 64, 8, 22)),
@@ -330,11 +426,15 @@ def main() -> None:
             "depth_by_camera": depth[:, :, 4, 11].detach().cpu().numpy().tolist(),
             "context_by_camera": context[:, :, 4, 11].detach().cpu().numpy().tolist(),
         },
+        "feature_anchors": {
+            "x": np.linspace(0, 351, 22, dtype=np.float32).tolist(),
+            "y": np.linspace(0, 127, 8, dtype=np.float32).tolist(),
+        },
     }
     (PUBLIC / "model-features.json").write_text(json.dumps(features_contract, separators=(",", ":")), encoding="utf-8")
 
     model_contract = {
-        "schema_version": "1.0.0", "sample_token": SAMPLE_TOKEN,
+        "schema_version": "2.0.0", "sample_token": SAMPLE_TOKEN,
         "source_commits": {"lss": LSS_COMMIT, "mmdetection3d": MM3D_COMMIT},
         "source_hashes": source_hashes, "evidence": "official-checkpoint-derived",
         "shapes": {
@@ -362,19 +462,33 @@ def main() -> None:
     model_path.write_text(json.dumps(model_contract, separators=(",", ":")), encoding="utf-8")
 
     rig_contract = {
-        "schema_version": "1.0.0", "sample_token": SAMPLE_TOKEN,
+        "schema_version": "2.0.0", "sample_token": SAMPLE_TOKEN,
         "dataset": payload["metainfo"], "timestamp": sample["timestamp"],
         "source_commits": {"lss": LSS_COMMIT, "mmdetection3d": MM3D_COMMIT},
         "source_hashes": source_hashes, "grid": GRID,
         "camera_order": CAMERAS, "cameras": camera_contract,
         "lidar2ego": sample["lidar_points"]["lidar2ego"],
         "ego2global": sample["ego2global"], "vehicles_ego": vehicles,
+        "frames": {
+            "camera": {"axes": "+x right, +y down, +z optical forward", "unit": "meter"},
+            "lidar": {"axes": "native LIDAR_TOP sensor frame", "unit": "meter"},
+            "ego": {"axes": "+x vehicle forward, +y left, +z up", "unit": "meter", "origin": "rear axle midpoint"},
+            "global": {"axes": "nuScenes map frame, z up", "unit": "meter"},
+            "network_image": {"axes": "+u right, +v down", "unit": "pixel", "shape": [128, 352]},
+            "bev": {"axes": "tensor [ego_x_cell, ego_y_cell]", "unit": "0.5 meter cell", "shape": [200, 200]},
+        },
+        "transform_convention": {
+            "vectors": "column", "active_transform": "p_to = T_from_to @ p_from",
+            "screen": "up = ego +x; left = ego +y",
+        },
     }
     (PUBLIC / "rig.json").write_text(json.dumps(json_safe(rig_contract), indent=2), encoding="utf-8")
     manifest = {
         "model_artifacts_sha256": sha256(model_path),
         "model_features_sha256": sha256(PUBLIC / "model-features.json"),
         "rig_sha256": sha256(PUBLIC / "rig.json"),
+        "alignment_sha256": sha256(alignment_path),
+        "lidar_sha256": source_hashes["lidar_frame"],
         "variant_hashes": {name: value["image_sha256"] for name, value in variants.items()},
     }
     (PUBLIC / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")

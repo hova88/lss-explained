@@ -1,7 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import {readFile} from "node:fs/promises";
 import {
-  applyRigid, boltzmannProbabilities, cameraPointToEgo, invertMat3, mat3Multiply,
+  applyRigid, bevIndexToEgo, binaryStats, boltzmannProbabilities, cameraPointToEgo,
+  determinantMat3, egoToBevIndex, egoToScreen, invertMat3, invertRigidMat4,
+  mat3Multiply, mat4Multiply, mat4Vector, nearestFeatureAnchor, projectLidarPoint,
+  quaternionToRotation, screenToBevIndex,
   naiveSumPool, outerProduct, poolCameraContributions, quickCumsum, softmax,
   trajectoryCost, transformPointSet, voxelIndex, voxelRank,
 } from "../lib/algorithm.mjs";
@@ -67,4 +71,58 @@ test("trajectory cost and Boltzmann probabilities select the low-cost path", () 
   const probabilities = boltzmannProbabilities(costs, 0.8);
   close(probabilities.reduce((sum, value) => sum + value, 0), 1);
   assert.equal(probabilities.indexOf(Math.max(...probabilities)), costs.indexOf(Math.min(...costs)));
+});
+
+test("homogeneous rigid composition and inverse preserve a point",()=>{
+  const transform=[[0,-1,0,2],[1,0,0,3],[0,0,1,.5],[0,0,0,1]];
+  const identity=mat4Multiply(invertRigidMat4(transform),transform);
+  identity.forEach((row,i)=>row.forEach((value,j)=>close(value,i===j?1:0)));
+  const point=[4,-2,1,1],roundTrip=mat4Vector(invertRigidMat4(transform),mat4Vector(transform,point));
+  roundTrip.forEach((value,index)=>close(value,point[index]));
+});
+
+test("quaternion conversion produces a proper rotation",()=>{
+  const rotation=quaternionToRotation([Math.SQRT1_2,0,0,Math.SQRT1_2]);
+  close(determinantMat3(rotation),1);
+  const point=rotation.map(row=>row[0]);
+  close(point[0],0);close(point[1],1);close(point[2],0);
+});
+
+test("official feature anchors use linspace and select the nearest cell",()=>{
+  const selected=nearestFeatureAnchor([176,64]);
+  assert.deepEqual(selected.index,[4,11]);
+  close(selected.anchor[0],351*11/21);
+  close(selected.anchor[1],127*4/7);
+  assert.deepEqual(nearestFeatureAnchor([351,127]).index,[7,21]);
+});
+
+test("ego, BEV index and screen mappings share one orientation contract",()=>{
+  assert.deepEqual(egoToBevIndex([0,0,0]),[100,100]);
+  assert.deepEqual(bevIndexToEgo([100,100]),[.25,.25]);
+  const frontLeft=egoToScreen([20,10,0]);
+  assert.ok(frontLeft[0]<.5,"ego left must display left");
+  assert.ok(frontLeft[1]<.5,"ego forward must display up");
+  assert.deepEqual(screenToBevIndex(frontLeft),[140,120]);
+  assert.equal(egoToBevIndex([50,0,0]),null);
+});
+
+test("LiDAR projection rejects points behind the camera",()=>{
+  const identity=[[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]],intrinsic=[[100,0,50],[0,100,40],[0,0,1]];
+  assert.deepEqual(projectLidarPoint([1,2,10],identity,intrinsic),{camera:[1,2,10],image:[60,60,10]});
+  assert.equal(projectLidarPoint([1,2,-10],identity,intrinsic),null);
+});
+
+test("single-frame diagnostic counts and IoU are explicit",()=>{
+  assert.deepEqual(binaryStats([.9,.8,.1,.2],[1,0,1,0],.5),{truePositive:1,falsePositive:1,falseNegative:1,trueNegative:1,iou:1/3});
+});
+
+test("pinned alignment contract and LiDAR binary are internally consistent",async()=>{
+  const alignment=JSON.parse(await readFile(new URL("../public/data/alignment.json",import.meta.url),"utf8"));
+  const lidar=await readFile(new URL("../public/data/lidar-frame.bin",import.meta.url));
+  assert.equal(alignment.schema_version,"2.0.0");
+  assert.deepEqual(alignment.lidar.shape,[34688,5]);
+  assert.equal(lidar.byteLength,34688*5*4);
+  assert.equal(alignment.camera_projections.length,6);
+  assert.equal(alignment.geometry_gold.length,18);
+  assert.ok(alignment.camera_projections.every(row=>row.visible_points>1000&&row.rotation_orthogonality_max_error<1e-6));
 });
