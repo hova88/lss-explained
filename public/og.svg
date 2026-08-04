@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <pattern id="paper" width="28" height="28" patternUnits="userSpaceOnUse"><circle cx="3" cy="5" r=".7" fill="#bdb7a8" opacity=".18"/><circle cx="19" cy="17" r=".45" fill="#928b7b" opacity=".14"/></pattern>
+    <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse"><path d="M24 0H0V24" fill="none" stroke="#668798" stroke-width=".7" opacity=".42"/></pattern>
+    <radialGradient id="heat"><stop offset="0" stop-color="#d85b35" stop-opacity=".9"/><stop offset=".35" stop-color="#75508b" stop-opacity=".72"/><stop offset="1" stop-color="#4f8396" stop-opacity="0"/></radialGradient>
+  </defs>
+  <rect width="1200" height="630" fill="#f1eee5"/><rect width="1200" height="630" fill="url(#paper)"/>
+  <text x="70" y="96" fill="#171918" font-family="Georgia,serif" font-size="62" letter-spacing="2">LIFT · SPLAT · SHOOT</text>
+  <text x="73" y="134" fill="#171918" font-family="monospace" font-size="16" letter-spacing="5">CAMERA-TO-BEV GEOMETRY LAB</text>
+  <g transform="translate(60 4)">
+    <path d="M230 273L160 165L292 220Z" fill="#a9cad5" opacity=".34" stroke="#4f8396"/><path d="M330 205L275 70L385 70Z" fill="#a9cad5" opacity=".34" stroke="#4f8396"/><path d="M430 273L368 220L500 165Z" fill="#a9cad5" opacity=".34" stroke="#4f8396"/>
+    <path d="M230 365L75 340L75 412Z" fill="#a9cad5" opacity=".34" stroke="#4f8396"/><path d="M430 365L585 340L585 412Z" fill="#a9cad5" opacity=".34" stroke="#4f8396"/><path d="M330 442L275 575L385 575Z" fill="#a9cad5" opacity=".34" stroke="#4f8396"/>
+    <rect x="273" y="235" width="114" height="215" rx="45" fill="#e8e4d8" stroke="#171918" stroke-width="3"/><path d="M287 284Q330 250 373 284V344H287Z" fill="#7fa6b5" opacity=".65" stroke="#171918"/><path d="M287 383H373V424Q330 446 287 424Z" fill="#171918" opacity=".83"/>
+    <g fill="#171918" stroke="#f1eee5" stroke-width="3"><circle cx="230" cy="273" r="9"/><circle cx="330" cy="205" r="9"/><circle cx="430" cy="273" r="9"/><circle cx="230" cy="365" r="9"/><circle cx="430" cy="365" r="9"/><circle cx="330" cy="442" r="9"/></g>
+    <path d="M430 273L690 308" stroke="#71508a" stroke-width="2"/><g fill="#71508a"> <circle cx="480" cy="280" r="4"/><circle cx="520" cy="286" r="5"/><circle cx="560" cy="291" r="4"/><circle cx="600" cy="297" r="8"/><circle cx="640" cy="302" r="4"/><circle cx="680" cy="307" r="3"/></g><circle cx="600" cy="297" r="4" fill="#d85b35"/>
+  </g>
+  <g transform="translate(760 190)"><rect width="350" height="350" fill="url(#grid)" stroke="#171918" stroke-width="2"/><rect width="350" height="350" fill="url(#heat)"/><path d="M175 350V0M0 175H350" stroke="#d85b35" stroke-width="2" opacity=".65"/><path d="M155 263h40v-72h33v-44h32" fill="none" stroke="#171918" stroke-width="4" opacity=".6"/><text x="12" y="-15" fill="#4f8396" font-family="monospace" font-size="13">BEV · EGO x FORWARD / y LEFT</text></g>
+  <path d="M704 356h42" stroke="#d85b35" stroke-width="2"/><path d="M746 356l-12-7v14z" fill="#d85b35"/>
+  <g font-family="monospace" font-size="13" fill="#5a5b55"><text x="75" y="598">SIX CAMERAS · ONE EGO FRAME · ECCV 2020</text><text x="825" y="594" fill="#d85b35">K⁻¹ → R · p + t → [ix, iy]</text></g>
+</svg>
