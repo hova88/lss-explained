@@ -103,7 +103,7 @@ function SelectionNote({ selection, onClose }:{selection:SceneSelection;onClose:
 }
 
 export default function LssExplainer() {
-  const [activeScene,setActiveScene]=useState(()=>typeof window==="undefined"?0:sceneIndexFromHash(window.location.hash)),[progress,setProgress]=useState(0),[mode,setMode]=useState<"guided"|"explore">("guided"),[contentsOpen,setContentsOpen]=useState(false);
+  const [activeScene,setActiveScene]=useState(0),[progress,setProgress]=useState(0),[mode,setMode]=useState<"guided"|"explore">("guided"),[contentsOpen,setContentsOpen]=useState(false);
   const [rig,setRig]=useState<Rig|null>(null),[features,setFeatures]=useState<Features|null>(null),[model,setModel]=useState<Model|null>(null),[alignment,setAlignment]=useState<Alignment|null>(null),[lidar,setLidar]=useState<Float32Array|null>(null);
   const [selectedCamera,setSelectedCamera]=useState(1),[depthIndex,setDepthIndex]=useState(15),[selection,setSelection]=useState<SceneSelection|null>(null),[selectedLidar,setSelectedLidar]=useState<number|null>(null);
   const [bevMode,setBevMode]=useState<BevMode>("probability"),[threshold,setThreshold]=useState(.5),[bevOpacity,setBevOpacity]=useState(.82),[rawGrid,setRawGrid]=useState(false);
@@ -115,9 +115,10 @@ export default function LssExplainer() {
   ]).then(([rigData,featuresData,modelData,alignmentData,lidarData])=>{setRig(rigData);setFeatures(featuresData);setModel(modelData);setAlignment(alignmentData);setLidar(new Float32Array(lidarData));}).catch((error)=>console.error("Evidence assets failed",error));},[]);
 
   useEffect(()=>{
-    const initial=sceneIndexFromHash(location.hash);requestAnimationFrame(()=>stepRefs.current[initial]?.scrollIntoView({block:"center"}));
+    const initial=sceneIndexFromHash(location.hash);
     const observer=new IntersectionObserver((entries)=>{const visible=entries.filter((entry)=>entry.isIntersecting).sort((a,b)=>b.intersectionRatio-a.intersectionRatio)[0];if(!visible)return;const index=Number((visible.target as HTMLElement).dataset.scene);setActiveScene(index);history.replaceState(null,"",`#${SCENES[index].id}`);setMode("guided");}, {rootMargin:"-25% 0px -50% 0px",threshold:[.05,.2,.45,.7]});
-    stepRefs.current.forEach((element)=>element&&observer.observe(element));return()=>observer.disconnect();
+    const frame=requestAnimationFrame(()=>{setActiveScene(initial);stepRefs.current[initial]?.scrollIntoView({block:"center"});stepRefs.current.forEach((element)=>element&&observer.observe(element));});
+    return()=>{cancelAnimationFrame(frame);observer.disconnect();};
   },[]);
 
   useEffect(()=>{let frame=0;const update=()=>{frame=0;const element=stepRefs.current[activeScene];if(!element)return;const rect=element.getBoundingClientRect(),range=Math.max(1,rect.height+innerHeight*.35);setProgress(Math.max(0,Math.min(1,(innerHeight*.55-rect.top)/range)));};const handler=()=>{if(!frame)frame=requestAnimationFrame(update);};addEventListener("scroll",handler,{passive:true});update();return()=>{removeEventListener("scroll",handler);if(frame)cancelAnimationFrame(frame);};},[activeScene]);
