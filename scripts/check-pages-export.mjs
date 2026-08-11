@@ -6,7 +6,8 @@ if(!html.includes('/lss-explained/_next/'))throw new Error("Static HTML is missi
 const required=[
   "index.html","og.png","data/rig.json","data/model-features.json","data/model-artifacts.json",
   "data/alignment.json","data/lidar-frame.bin","data/network-images/cam-front.jpg",
-  "data/model/bev-all-cameras.png","data/model/vehicle-gt.png","articles/lift-splat-shoot-explained.zh-CN.md",
+  "data/model/bev-all-cameras.png","data/model/vehicle-gt.png","articles/lift-splat-shoot-source-notes.md",
 ];
 for(const relative of required){const info=await stat(join(out,relative));if(!info.isFile()||info.size===0)throw new Error(`Missing exported Pages asset: ${relative}`)}
-console.log("verified static export under /lss-explained with bilingual lab, LiDAR, article, evidence, and model rasters");
+if(/locale|zh-CN|[\u3400-\u9fff]/u.test(html))throw new Error("Static HTML still contains the removed bilingual interface");
+console.log("verified static export under /lss-explained with the English visual essay, three labs, LiDAR, source notes, and model rasters");

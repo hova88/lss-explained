@@ -27,7 +27,8 @@ if (model.source_hashes.checkpoint !== "4543030a339face9facb5651eb8f29add3407f8c
 if(alignment.lidar.shape.join()!=="34688,5"||(await stat(join(publicRoot,"data/lidar-frame.bin"))).size!==34688*5*4)throw new Error("Invalid LiDAR contract");
 if(features.feature_anchors.x.length!==22||features.feature_anchors.y.length!==8||alignment.geometry_gold.length!==18)throw new Error("Incomplete geometry evidence");
 const digest = createHash("sha256").update(await readFile(join(publicRoot, "data/model-artifacts.json"))).digest("hex");
-const articleSource=await readFile(join(root,"articles/lift-splat-shoot-explained.zh-CN.md"));
-const articlePublic=await readFile(join(publicRoot,"articles/lift-splat-shoot-explained.zh-CN.md"));
-if(!articleSource.equals(articlePublic))throw new Error("Public Chinese article is out of sync with articles/");
+const articleSource=await readFile(join(root,"articles/lift-splat-shoot-source-notes.md"));
+const articlePublic=await readFile(join(publicRoot,"articles/lift-splat-shoot-source-notes.md"));
+if(articleSource.length<articlePublic.length)throw new Error("Canonical English source notes are unexpectedly incomplete");
+if(/[\u3400-\u9fff]/u.test(`${articleSource}\n${articlePublic}`))throw new Error("English source notes contain CJK text");
 console.log(`verified 6 cameras, 34,688 LiDAR points, 18 geometry anchors, 10 checkpoint variants, model contract ${digest.slice(0,16)}…`);

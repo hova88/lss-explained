@@ -3,7 +3,9 @@ import assert from "node:assert/strict";
 import {readFile} from "node:fs/promises";
 import {
   applyRigid, bevIndexToEgo, binaryStats, boltzmannProbabilities, cameraPointToEgo,
+  cameraFrustumCorners, cameraOpticalAxis,
   determinantMat3, egoToBevIndex, egoToScreen, invertMat3, invertRigidMat4,
+  float16LittleEndianToFloat32,
   mat3Multiply, mat4Multiply, mat4Vector, nearestFeatureAnchor, projectLidarPoint,
   quaternionToRotation, screenToBevIndex,
   naiveSumPool, outerProduct, poolCameraContributions, quickCumsum, softmax,
@@ -112,8 +114,35 @@ test("LiDAR projection rejects points behind the camera",()=>{
   assert.equal(projectLidarPoint([1,2,-10],identity,intrinsic),null);
 });
 
+test("camera optical axis and frustum corners follow real calibration",()=>{
+  const intrinsic=[[100,0,50],[0,100,40],[0,0,1]],cameraToEgo=[[0,0,1,2],[-1,0,0,3],[0,-1,0,1],[0,0,0,1]];
+  assert.deepEqual(cameraOpticalAxis(cameraToEgo),[1,0,0]);
+  const corners=cameraFrustumCorners(intrinsic,cameraToEgo,100,80,10);
+  assert.equal(corners.length,4);
+  corners.forEach(point=>close(point[0],12));
+  assert.ok(corners[0][1]>corners[1][1]);
+  assert.ok(corners[0][2]>corners[3][2]);
+});
+
 test("single-frame diagnostic counts and IoU are explicit",()=>{
   assert.deepEqual(binaryStats([.9,.8,.1,.2],[1,0,1,0],.5),{truePositive:1,falsePositive:1,falseNegative:1,trueNegative:1,iou:1/3});
+});
+
+test("little-endian float16 evidence decodes without losing half the tensor",async()=>{
+  const known=float16LittleEndianToFloat32(Uint8Array.from([0x00,0x3c,0x00,0xc0,0x00,0x38,0x00,0x00]));
+  assert.deepEqual(Array.from(known),[1,-2,.5,0]);
+  const [model,alignment]=await Promise.all([
+    readFile(new URL("../public/data/model-artifacts.json",import.meta.url),"utf8").then(JSON.parse),
+    readFile(new URL("../public/data/alignment.json",import.meta.url),"utf8").then(JSON.parse),
+  ]);
+  const bytes=Uint8Array.from(Buffer.from(model.variants["all-cameras"].logits.data,"base64"));
+  const logits=float16LittleEndianToFloat32(bytes);
+  const truth=Uint8Array.from(Buffer.from(model.ground_truth.mask.data,"base64"));
+  const probability=Array.from(logits,value=>1/(1+Math.exp(-value)));
+  const stats=binaryStats(probability,truth,.5),expected=alignment.single_frame_diagnostics.find(row=>row.threshold===.5);
+  assert.equal(logits.length,40000);
+  assert.deepEqual([stats.truePositive,stats.falsePositive,stats.falseNegative],[expected.tp,expected.fp,expected.fn]);
+  close(stats.iou,expected.iou,1e-7);
 });
 
 test("pinned alignment contract and LiDAR binary are internally consistent",async()=>{
@@ -125,4 +154,17 @@ test("pinned alignment contract and LiDAR binary are internally consistent",asyn
   assert.equal(alignment.camera_projections.length,6);
   assert.equal(alignment.geometry_gold.length,18);
   assert.ok(alignment.camera_projections.every(row=>row.visible_points>1000&&row.rotation_orthogonality_max_error<1e-6));
+});
+
+test("v5 public experience is English-only and defines twelve scenes",async()=>{
+  const [content,explainer,layout]=await Promise.all([
+    readFile(new URL("../app/lss-content.ts",import.meta.url),"utf8"),
+    readFile(new URL("../app/LssExplainer.tsx",import.meta.url),"utf8"),
+    readFile(new URL("../app/layout.tsx",import.meta.url),"utf8"),
+  ]);
+  const source=`${content}\n${explainer}\n${layout}`;
+  assert.equal((content.match(/id: \"[a-z-]+\"/g)??[]).length,12);
+  assert.equal(/[\u3400-\u9fff]/u.test(source),false);
+  assert.equal(/type\s+Locale|Localized|setLanguage|language-switch/.test(source),false);
+  assert.ok(layout.includes('<html lang="en">'));
 });
