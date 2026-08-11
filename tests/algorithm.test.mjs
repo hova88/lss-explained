@@ -156,7 +156,7 @@ test("pinned alignment contract and LiDAR binary are internally consistent",asyn
   assert.ok(alignment.camera_projections.every(row=>row.visible_points>1000&&row.rotation_orthogonality_max_error<1e-6));
 });
 
-test("v5 public experience is English-only and defines twelve scenes",async()=>{
+test("v6 public experience is English-only and defines twelve content-first scenes",async()=>{
   const [content,explainer,layout]=await Promise.all([
     readFile(new URL("../app/lss-content.ts",import.meta.url),"utf8"),
     readFile(new URL("../app/LssExplainer.tsx",import.meta.url),"utf8"),

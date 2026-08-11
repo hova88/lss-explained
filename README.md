@@ -4,7 +4,7 @@ An English-only, source-audited visual essay about the original ECCV 2020 **Lift
 
 **Live:** https://hova88.github.io/lss-explained/
 
-This is the camera-to-BEV companion to [pointpillars-explained](https://github.com/hova88/pointpillars-explained). Version 5 replaces the previous chapter-card interface with a continuous editorial field notebook: deterministic ink illustrations, a calibrated 3D rig, a paper-like BEV lab and real checkpoint evidence. The pinned 34,688-point LiDAR scan is a reference overlay only and is never passed into LSS inference.
+This is the camera-to-BEV companion to [pointpillars-explained](https://github.com/hova88/pointpillars-explained). Version 6 is a content-first spatial whiteboard: the narrative begins with motivation and exact I/O, then introduces only the geometry and learning machinery needed for the next step. Deterministic ink drawings guide the course; calibrated 3D is optional inside the labs. The pinned 34,688-point LiDAR scan is a reference overlay only and is never passed into LSS inference.
 
 ## Course path
 
@@ -49,8 +49,8 @@ pnpm build:pages
 
 ## Interaction
 
-- Scroll through twelve scenes; the central plate redraws as the active idea changes.
-- Enter Explore mode only when you want to orbit, zoom or inspect the calibrated 3D stage.
+- Scroll through twelve progressively dependent scenes; each states what enters, what changes and what leaves.
+- Guided scenes use a hand-drawn spatial whiteboard. Open calibrated 3D only when you want to orbit, zoom or inspect real geometry.
 - Click cameras, depth bins, LiDAR points, GT objects, BEV cells and trajectory templates to follow one shared evidence thread.
 - Use the three lab sections for geometry, BEV truth and robustness/trajectory experiments.
 - Arrow keys move between scenes; Escape returns to the guided story and closes inspection notes.

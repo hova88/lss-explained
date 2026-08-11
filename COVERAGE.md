@@ -1,28 +1,28 @@
 # Coverage contract
 
-The v5 visual essay maps the original LSS paper, pinned official implementation and one fixed nuScenes sample to twelve narrative scenes and three interactive labs. Visual teaching order may merge adjacent source topics; no technical claim is removed.
+The v6 course maps the original LSS paper, pinned official implementation and one fixed nuScenes sample to twelve content-first scenes and three optional laboratories. Guided scenes use spatial-whiteboard drawings; calibrated WebGL appears only when a reader explicitly opens a lab.
 
 | # | Narrative scene | Paper / implementation coverage | Evidence |
 |---:|---|---|---|
-| 1 | The problem LSS solves | Paper §1 and Fig. 4; input/output contract and full forward map | PAPER + CHECKPOINT |
-| 2 | One nuScenes sample | `SegmentationData`; image/calibration/target packet and LiDAR exclusion | OFFICIAL CODE + REAL SAMPLE |
-| 3 | The camera rig is geometry | calibrated sensor, ego pose, quaternion, K/R/t provenance and cross-time transforms | REAL SAMPLE |
-| 4 | Images become features | resize/crop, post-transform, EfficientNet, shared CamEncode and 8×22 anchors | OFFICIAL CODE + CHECKPOINT |
-| 5 | A pixel becomes a ray | `create_frustum`, pinhole unprojection and monocular ambiguity | OFFICIAL CODE |
-| 6 | Lift into latent depth | Paper §3.1; full 41D allocation × 64D context outer product | CHECKPOINT |
-| 7 | Every camera meets in ego | exact `get_geometry`, outward optical axes and camera permutation invariance | REAL SAMPLE + OFFICIAL CODE |
-| 8 | Splat onto the ground | half-open bounds, floor, rank, sort, QuickCumsum and exact sum pooling | OFFICIAL CODE + TEACHING |
-| 9 | Reason in bird’s-eye view | `[B,C,Z,X,Y]`, z collapse, `[B,64,200,200]` and `BevEncode` | CHECKPOINT + OFFICIAL CODE |
-| 10 | Learn, infer, stop | BEV target, BCEWithLogits, gradient path, sigmoid/threshold and excluded post-processing | OFFICIAL CODE + PAPER |
-| 11 | The truth lab | linked camera/LiDAR/ego/BEV evidence, GT, probability and errors | REAL SAMPLE + CHECKPOINT |
-| 12 | From evidence to action | paper results, dropout, calibration noise, limitations and Shoot Eq. 2 | PAPER + TEACHING |
+| 1 | First, see the whole machine | motivation, exact input/output contract, Lift–Splat–Shoot overview and LiDAR boundary | PAPER + CHECKPOINT |
+| 2 | Perspective is not a common ground | perspective ambiguity, why image stitching fails and why depth stays latent | PAPER |
+| 3 | One sample, four different roles | model input, calibration, raster target and reference-only LiDAR | REAL SAMPLE + OFFICIAL CODE |
+| 4 | Preserve geometry while compressing appearance | resize/crop, post-transform, shared CamEncode, 8×22 anchors and 105-channel split | OFFICIAL CODE + CHECKPOINT |
+| 5 | Undo the image, then open a ray | raw/network pixels, K⁻¹, camera axes, 41 metric depth candidates | OFFICIAL CODE |
+| 6 | Lift without a depth label | 41D softmax allocation, 64D context, outer product and latent-depth semantics | CHECKPOINT + PAPER |
+| 7 | The complete coordinate chain | quaternion provenance, homogeneous transforms and exact `get_geometry` order | REAL SAMPLE + OFFICIAL CODE |
+| 8 | Six cameras become one unordered set | real outward axes/frustums, permutation invariance and ego equivariance | PAPER + REAL SAMPLE |
+| 9 | Turn irregular 3D evidence into BEV cells | bounds, floor quantization, rank, sort, QuickCumsum and z collapse | OFFICIAL CODE |
+| 10 | Geometry places evidence; learning interprets it | `[B,64,200,200]`, `BevEncode`, BCE and the gradient path into latent depth | OFFICIAL CODE + PAPER |
+| 11 | Read the output in the right coordinate system | logits, sigmoid, threshold, excluded post-processing and linked truth audit | CHECKPOINT + REAL SAMPLE |
+| 12 | Results, robustness, Shoot—and the boundary | reported baselines/IoU, dropout, noise, limitations and Shoot Eq. 2 | PAPER + TEACHING |
 
 ## Interactive lab mapping
 
 | Lab | Scenes | Browser contract |
 |---|---|---|
-| Calibrated geometry | 3–7 | real images, K, feature anchor, depth allocation, camera frustums and exact ego transform |
-| Linked BEV evidence | 8–11 | probability, threshold, GT, errors, LiDAR occupancy, contributors and raw-grid inspection |
+| Calibrated geometry | 3–8 | real images, K, feature anchor, depth allocation, outward camera frustums and exact ego transform |
+| Linked BEV evidence | 9–11 | probability, threshold, GT, errors, LiDAR occupancy, contributors and raw-grid inspection |
 | Robustness and action | 12 | cached camera-drop/yaw outputs, trajectory costs and Boltzmann probabilities |
 
 ## Deliberate boundaries

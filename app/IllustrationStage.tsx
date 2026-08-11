@@ -93,6 +93,48 @@ function drawCar(ctx: CanvasRenderingContext2D, random: () => number, x: number,
   arrow(ctx, random, x, y - 68 * scale, x, y - 102 * scale, palette.rust);
 }
 
+type Point2 = [number, number];
+type Point3 = [number, number, number];
+
+function iso(point: Point3, cx: number, cy: number, scale: number): Point2 {
+  const [x,y,z]=point;
+  return [cx+(x-y)*.866*scale,cy+(x+y)*.5*scale-z*scale];
+}
+
+function roughPolygon(ctx: CanvasRenderingContext2D, random: () => number, points: Point2[], color=palette.ink, fill?:string, alpha=.12) {
+  if(fill){ctx.save();ctx.fillStyle=fill;ctx.globalAlpha=alpha;ctx.beginPath();points.forEach(([x,y],index)=>index?ctx.lineTo(x,y):ctx.moveTo(x,y));ctx.closePath();ctx.fill();ctx.restore();}
+  points.forEach((point,index)=>roughLine(ctx,random,point[0],point[1],points[(index+1)%points.length][0],points[(index+1)%points.length][1],color,1.15,.62));
+}
+
+function drawIsoGrid(ctx: CanvasRenderingContext2D, random: () => number, cx:number, cy:number, scale:number, extent=7) {
+  for(let index=-extent;index<=extent;index+=1){
+    const a=iso([index,-extent,0],cx,cy,scale),b=iso([index,extent,0],cx,cy,scale),c=iso([-extent,index,0],cx,cy,scale),d=iso([extent,index,0],cx,cy,scale);
+    roughLine(ctx,random,a[0],a[1],b[0],b[1],index===0?palette.rust:palette.pencil,index===0?1.05:.55,index===0?.42:.2);
+    roughLine(ctx,random,c[0],c[1],d[0],d[1],index===0?palette.blue:palette.pencil,index===0?1.05:.55,index===0?.38:.2);
+  }
+}
+
+function drawIsoCar(ctx:CanvasRenderingContext2D,random:()=>number,cx:number,cy:number,scale:number) {
+  const footprint:Point3[]=[[-.72,-1.5,0],[.72,-1.5,0],[.88,-.85,0],[.82,1.35,0],[0,1.65,0],[-.82,1.35,0],[-.88,-.85,0]];
+  const top=footprint.map(([x,y])=>iso([x,y,.38],cx,cy,scale)),bottom=footprint.map((point)=>iso(point,cx,cy,scale));
+  roughPolygon(ctx,random,bottom,palette.ink,"#eee6d7",.8);roughPolygon(ctx,random,top,palette.ink,"#eee6d7",.94);
+  for(let index=0;index<bottom.length;index+=1)roughLine(ctx,random,bottom[index][0],bottom[index][1],top[index][0],top[index][1],palette.ink,1,.42);
+  const cabin=[[-.52,-.45,.42],[.52,-.45,.42],[.54,.72,.42],[0,.98,.42],[-.54,.72,.42]].map((point)=>iso(point as Point3,cx,cy,scale));
+  roughPolygon(ctx,random,cabin,palette.blue,palette.blue,.17);
+  const origin=iso([0,.15,.48],cx,cy,scale);dot(ctx,origin[0],origin[1],3.4,palette.ochre,.82);
+  const forward=iso([0,2.45,.48],cx,cy,scale);arrow(ctx,random,origin[0],origin[1],forward[0],forward[1],palette.rust);
+}
+
+function drawSpatialCamera(ctx:CanvasRenderingContext2D,random:()=>number,from:Point2,to:Point2,selected=false) {
+  roughRect(ctx,random,from[0]-8,from[1]-6,16,12,selected?palette.rust:palette.ink,selected?palette.rust:palette.ochre);
+  const dx=to[0]-from[0],dy=to[1]-from[1],length=Math.hypot(dx,dy)||1,nx=-dy/length,ny=dx/length;
+  const left:[number,number]=[to[0]+nx*34,to[1]+ny*34],right:[number,number]=[to[0]-nx*34,to[1]-ny*34];
+  ctx.save();ctx.fillStyle=selected?palette.rust:palette.blue;ctx.globalAlpha=selected ? .09 : .035;ctx.beginPath();ctx.moveTo(...from);ctx.lineTo(...left);ctx.lineTo(...right);ctx.closePath();ctx.fill();ctx.restore();
+  roughLine(ctx,random,from[0],from[1],left[0],left[1],selected?palette.rust:palette.blue,selected?1.5:.8,selected ? .72 : .28);
+  roughLine(ctx,random,from[0],from[1],right[0],right[1],selected?palette.rust:palette.blue,selected?1.5:.8,selected ? .72 : .28);
+  roughLine(ctx,random,from[0],from[1],to[0],to[1],selected?palette.rust:palette.pencil,selected?1.7:.8,selected ? .8 : .32);
+}
+
 function drawScene(ctx: CanvasRenderingContext2D, width: number, height: number, scene: NarrativeScene, progress: number, camera: number, depth: number) {
   const random = seeded(sceneSeed(scene.id));
   const cx = width * 0.5, cy = height * 0.52;
@@ -120,71 +162,31 @@ function drawScene(ctx: CanvasRenderingContext2D, width: number, height: number,
     roughRect(ctx, random, cx - 80, cy + 145, 160, 76, palette.sage, palette.sage);
     arrow(ctx, random, cx, cy + 108, cx, cy + 142);
   } else if (scene.illustration === "rig") {
-    drawCar(ctx, random, cx, cy, 1.05);
-    for (let i = 0; i < 6; i += 1) {
-      const angle = -Math.PI / 2 + i * Math.PI / 3;
-      const ox = cx + Math.cos(angle) * 48, oy = cy + Math.sin(angle) * 70;
-      const fx = cx + Math.cos(angle) * 205, fy = cy + Math.sin(angle) * 205;
-      roughLine(ctx, random, ox, oy, fx, fy, i === camera ? palette.rust : palette.blue, i === camera ? 2.4 : 1.1);
-      roughLine(ctx, random, ox, oy, fx + Math.sin(angle) * 62, fy - Math.cos(angle) * 62, i === camera ? palette.rust : palette.blue, 0.9, 0.5);
-      roughLine(ctx, random, ox, oy, fx - Math.sin(angle) * 62, fy + Math.cos(angle) * 62, i === camera ? palette.rust : palette.blue, 0.9, 0.5);
-    }
+    const s=Math.min(width,height)/18,baseY=cy+90;drawIsoGrid(ctx,random,cx,baseY,s,7);drawIsoCar(ctx,random,cx,baseY,s);
+    for(let index=0;index<6;index+=1){const angle=Math.PI/2-index*Math.PI/3,origin=iso([Math.cos(angle)*1.25,Math.sin(angle)*1.25,.85],cx,baseY,s),target=iso([Math.cos(angle)*6.2,Math.sin(angle)*6.2,.65],cx,baseY,s);drawSpatialCamera(ctx,random,origin,target,index===camera);}
   } else if (scene.illustration === "features") {
-    roughRect(ctx, random, cx - 290, cy - 145, 290, 164, palette.ink, palette.blue);
-    arrow(ctx, random, cx + 15, cy - 64, cx + 88, cy - 64);
-    const gx = cx + 115, gy = cy - 145, cellW = 14, cellH = 20;
-    for (let row = 0; row < 8; row += 1) for (let col = 0; col < 22; col += 1) {
-      ctx.save(); ctx.fillStyle = (row + col) % 7 === 0 ? palette.rust : palette.blue; ctx.globalAlpha = 0.08 + ((row * 17 + col * 13) % 11) / 28; ctx.fillRect(gx + col * cellW, gy + row * cellH, cellW - 2, cellH - 2); ctx.restore();
-    }
-    roughRect(ctx, random, gx, gy, 22 * cellW, 8 * cellH, palette.ink);
+    const s=Math.min(width,height)/17,baseY=cy+80;drawIsoGrid(ctx,random,cx,baseY,s,6);
+    const image=[[-5,-2,1],[-5,3,1],[-5,3,4.1],[-5,-2,4.1]].map(point=>iso(point as Point3,cx,baseY,s));roughPolygon(ctx,random,image,palette.ink,palette.blue,.1);
+    const feature=[[1,-2,1.25],[1,3,1.25],[1,3,3.65],[1,-2,3.65]].map(point=>iso(point as Point3,cx,baseY,s));roughPolygon(ctx,random,feature,palette.ink,palette.ochre,.1);
+    for(let row=1;row<8;row+=1){const t=row/8,a:[number,number]=[feature[0][0]+(feature[3][0]-feature[0][0])*t,feature[0][1]+(feature[3][1]-feature[0][1])*t],b:[number,number]=[feature[1][0]+(feature[2][0]-feature[1][0])*t,feature[1][1]+(feature[2][1]-feature[1][1])*t];roughLine(ctx,random,a[0],a[1],b[0],b[1],palette.blue,.45,.22);}
+    for(let col=1;col<11;col+=1){const t=col/11,a:[number,number]=[feature[0][0]+(feature[1][0]-feature[0][0])*t,feature[0][1]+(feature[1][1]-feature[0][1])*t],b:[number,number]=[feature[3][0]+(feature[2][0]-feature[3][0])*t,feature[3][1]+(feature[2][1]-feature[3][1])*t];roughLine(ctx,random,a[0],a[1],b[0],b[1],palette.blue,.45,.22);}
+    arrow(ctx,random,image[1][0]+22,image[1][1]-8,feature[0][0]-25,feature[0][1]+4,palette.rust);
   } else if (scene.illustration === "ray" || scene.illustration === "lift") {
-    const originX = cx - 260, originY = cy + 130;
-    roughRect(ctx, random, originX - 25, originY - 18, 50, 36, palette.ink, palette.ink);
-    roughLine(ctx, random, originX, originY, cx + 310, cy - 130, palette.rust, 2);
-    for (let i = 0; i < 41; i += 1) {
-      const t = (i + 1) / 42;
-      const x = originX + (cx + 310 - originX) * t, y = originY + (cy - 130 - originY) * t;
-      const peak = Math.exp(-1 * ((i - depth) / 5) ** 2);
-      dot(ctx, x, y, scene.illustration === "lift" ? 2.2 + peak * 8 : i === depth ? 7 : 2, i === depth ? palette.rust : palette.blue, scene.illustration === "lift" ? 0.25 + peak * 0.7 : 0.5);
-    }
-    if (scene.illustration === "lift") wash(ctx, random, cx + 80, cy + 5, 170, 65, palette.blue, 0.08);
+    const s=Math.min(width,height)/18,baseY=cy+115;drawIsoGrid(ctx,random,cx,baseY,s,7);const origin=iso([-4,-2,1.8],cx,baseY,s),end=iso([6,3,.5],cx,baseY,s);
+    drawSpatialCamera(ctx,random,origin,end,true);roughLine(ctx,random,origin[0],origin[1],end[0],end[1],palette.rust,1.6,.8);
+    for(let index=0;index<41;index+=1){const t=(index+1)/42,x=origin[0]+(end[0]-origin[0])*t,y=origin[1]+(end[1]-origin[1])*t,peak=Math.exp(-1*((index-depth)/5)**2),radius=scene.illustration==="lift"?1.8+peak*7:index===depth?6.5:1.7;dot(ctx,x,y,radius,index===depth?palette.rust:palette.blue,scene.illustration==="lift"?.22+peak*.68:.46);}
+    if(scene.illustration==="lift")for(let index=0;index<9;index+=1){const t=.25+index*.055,x=origin[0]+(end[0]-origin[0])*t,y=origin[1]+(end[1]-origin[1])*t;wash(ctx,random,x,y,18+index*2,10+index,palette.blue,.025);}
   } else if (scene.illustration === "geometry") {
-    const labels = ["u′", "A⁻¹", "K⁻¹", "R", "+t", "ego"];
-    labels.forEach((_, i) => {
-      const x = 55 + i * ((width - 110) / (labels.length - 1));
-      dot(ctx, x, cy, i === labels.length - 1 ? 11 : 7, i < 2 ? palette.ochre : i < 4 ? palette.blue : palette.rust, 0.7);
-      if (i < labels.length - 1) arrow(ctx, random, x + 13, cy, x + (width - 110) / (labels.length - 1) - 13, cy, palette.pencil);
-    });
-    drawCar(ctx, random, width - 85, cy + 130, 0.46);
+    const s=Math.min(width,height)/18,baseY=cy+95;drawIsoGrid(ctx,random,cx,baseY,s,7);const frames:[Point3,string][]=[[[-5,-2,2.7],palette.ochre],[[-1,-1,2.1],palette.blue],[[2,1,1.4],palette.rust],[[5,3,.25],palette.sage]];
+    frames.forEach(([point,color],index)=>{const center=iso(point,cx,baseY,s),x=iso([point[0]+1,point[1],point[2]],cx,baseY,s),y=iso([point[0],point[1]+1,point[2]],cx,baseY,s),z=iso([point[0],point[1],point[2]+1],cx,baseY,s);dot(ctx,center[0],center[1],index===frames.length-1?7:4,color,.82);roughLine(ctx,random,center[0],center[1],x[0],x[1],palette.rust,.85,.6);roughLine(ctx,random,center[0],center[1],y[0],y[1],palette.blue,.85,.6);roughLine(ctx,random,center[0],center[1],z[0],z[1],palette.sage,.85,.6);if(index<frames.length-1){const next=iso(frames[index+1][0],cx,baseY,s);arrow(ctx,random,center[0]+10,center[1],next[0]-10,next[1],palette.pencil);}});drawIsoCar(ctx,random,cx,baseY,s*.72);
   } else if (scene.illustration === "splat") {
-    const grid = Math.min(width, height) * 0.68, left = cx - grid / 2, top = cy - grid / 2;
-    for (let i = 0; i <= 12; i += 1) {
-      roughLine(ctx, random, left + i * grid / 12, top, left + i * grid / 12, top + grid, palette.pencil, 0.5, 0.35);
-      roughLine(ctx, random, left, top + i * grid / 12, left + grid, top + i * grid / 12, palette.pencil, 0.5, 0.35);
-    }
-    for (let i = 0; i < 76; i += 1) {
-      const x = left + random() * grid, y = top - 60 - random() * 65;
-      const targetX = left + Math.floor(random() * 12) * grid / 12 + grid / 24;
-      const targetY = top + Math.floor(random() * 12) * grid / 12 + grid / 24;
-      dot(ctx, x, y, 2.2, palette.blue, 0.55); roughLine(ctx, random, x, y, targetX, targetY, palette.blue, 0.45, 0.18);
-    }
-    wash(ctx, random, cx + 45, cy - 5, 68, 55, palette.rust, 0.24);
+    const s=Math.min(width,height)/18,baseY=cy+135;drawIsoGrid(ctx,random,cx,baseY,s,7);for(let index=0;index<70;index+=1){const gx=-5+Math.floor(random()*10),gy=-5+Math.floor(random()*10),z=1.4+random()*5.4,point=iso([gx+random()*.8,gy+random()*.8,z],cx,baseY,s),ground=iso([gx+.5,gy+.5,.08],cx,baseY,s);dot(ctx,point[0],point[1],1.6+random()*1.8,palette.blue,.45);roughLine(ctx,random,point[0],point[1],ground[0],ground[1],palette.blue,.4,.13);if(index%13===0)wash(ctx,random,ground[0],ground[1],18,10,palette.rust,.11);}drawIsoCar(ctx,random,cx,baseY,s*.68);
   } else if (scene.illustration === "bev" || scene.illustration === "truth") {
-    const size = Math.min(width, height) * 0.72, left = cx - size / 2, top = cy - size / 2;
-    roughRect(ctx, random, left, top, size, size, palette.ink);
-    for (let i = 0; i < 15; i += 1) wash(ctx, random, left + random() * size, top + random() * size, 14 + random() * 38, 9 + random() * 26, i % 3 ? palette.rust : palette.ochre, 0.08 + random() * 0.1);
-    drawCar(ctx, random, cx, cy + size * 0.22, 0.38);
-    if (scene.illustration === "truth") for (let i = 0; i < 420; i += 1) dot(ctx, left + random() * size, top + random() * size, 0.7 + random() * 1.4, i % 4 ? palette.blue : palette.sage, 0.38);
+    const s=Math.min(width,height)/18,baseY=cy+120;drawIsoGrid(ctx,random,cx,baseY,s,7);for(let index=0;index<18;index+=1){const point=iso([-5+random()*10,-5+random()*10,.05],cx,baseY,s);wash(ctx,random,point[0],point[1],13+random()*25,7+random()*13,index%3?palette.rust:palette.ochre,.055+random()*.08);}if(scene.illustration==="truth")for(let index=0;index<360;index+=1){const point=iso([-6+random()*12,-6+random()*12,.12+random()*.35],cx,baseY,s);dot(ctx,point[0],point[1],.6+random()*1.2,index%4?palette.blue:palette.sage,.32);}drawIsoCar(ctx,random,cx,baseY,s*.72);
   } else if (scene.illustration === "learning") {
-    const nodes = [[cx-260,cy-120],[cx-80,cy-120],[cx+100,cy-120],[cx+280,cy-120],[cx+280,cy+100],[cx+100,cy+100],[cx-80,cy+100],[cx-260,cy+100]];
-    nodes.forEach(([x,y], i) => { roughRect(ctx, random, x-48,y-27,96,54,i<4?palette.blue:palette.rust,i<4?palette.blue:palette.rust); if(i<nodes.length-1) arrow(ctx,random,x+48,y,nodes[i+1][0]-48,nodes[i+1][1],i<3?palette.blue:palette.rust); });
+    const s=Math.min(width,height)/18,baseY=cy+150;drawIsoGrid(ctx,random,cx,baseY,s,6);const layers=[0.15,1.5,2.85,4.2];layers.forEach((z,index)=>{const plane=[[-4,-3,z],[4,-3,z],[4,3,z],[-4,3,z]].map(point=>iso(point as Point3,cx,baseY,s));roughPolygon(ctx,random,plane,index===layers.length-1?palette.rust:palette.blue,index===layers.length-1?palette.rust:palette.blue,.04+index*.018);if(index<layers.length-1){const a=iso([4,0,z+.2],cx,baseY,s),b=iso([4,0,layers[index+1]-.2],cx,baseY,s);arrow(ctx,random,a[0],a[1],b[0],b[1],palette.rust);}});const backwardA=iso([-4,0,4],cx,baseY,s),backwardB=iso([-4,0,.35],cx,baseY,s);arrow(ctx,random,backwardA[0],backwardA[1],backwardB[0],backwardB[1],palette.blue);
   } else {
-    const paths = Array.from({ length: 7 }, (_, index) => Array.from({ length: 18 }, (_, point) => {
-      const y = cy + 180 - point * 20;
-      return [cx + (index - 3) * 0.017 * (point * 20) ** 1.55, y];
-    }));
-    paths.forEach((path, index) => path.slice(1).forEach((point, pointIndex) => roughLine(ctx, random, path[pointIndex][0], path[pointIndex][1], point[0], point[1], index === 3 ? palette.rust : palette.blue, index === 3 ? 2.8 : 1, index === 3 ? 0.95 : 0.35)));
-    drawCar(ctx, random, cx, cy + 205, 0.5);
+    const s=Math.min(width,height)/18,baseY=cy+145;drawIsoGrid(ctx,random,cx,baseY,s,7);for(let pathIndex=0;pathIndex<7;pathIndex+=1){const path=Array.from({length:20},(_,point)=>iso([(pathIndex-3)*.025*point**1.65,point*.42-1,.2],cx,baseY,s));path.slice(1).forEach((point,index)=>roughLine(ctx,random,path[index][0],path[index][1],point[0],point[1],pathIndex===3?palette.rust:palette.blue,pathIndex===3?2.5:.9,pathIndex===3?.9:.28));}drawIsoCar(ctx,random,cx,baseY,s*.72);
   }
   ctx.restore();
 }

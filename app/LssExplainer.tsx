@@ -42,9 +42,11 @@ function StoryStep({ index, active, setRef }:{index:number;active:boolean;setRef
       <h2>{scene.title}</h2>
       <p className="scene-question">{scene.question}</p>
       <p className="scene-reveal">{scene.reveal}</p>
-      <ol>{scene.beats.map((beat,beatIndex)=><li key={beat}><i>{beatIndex+1}</i><span>{beat}</span></li>)}</ol>
+      <div className="scene-explanation">{scene.explanation.map((paragraph)=><p key={paragraph}>{paragraph}</p>)}</div>
+      <ol>{scene.steps.map((step,stepIndex)=><li key={step.label}><i>{stepIndex+1}</i><span><b>{step.label}</b>{step.text}</span></li>)}</ol>
       <code className="scene-formula">{scene.formula}</code>
       <footer><EvidenceTag value={scene.evidence} /><span>{scene.source}</span></footer>
+      <p className="scene-handoff">{scene.handoff}</p>
       {index<SCENES.length-1&&<div className="scroll-cue">keep tracing <ChevronDown /></div>}
     </article>
   );
@@ -60,7 +62,7 @@ function CameraStrip({ rig, selected, enabled, onSelect, onToggle }:{rig:Rig|nul
 }
 
 function LabShell({ id, title, eyebrow, children, onExplore, mode }:{id:LabId;title:string;eyebrow:string;children:React.ReactNode;onExplore:()=>void;mode:"guided"|"explore"}) {
-  return <section className={`lab-break lab-${id}`} data-lab={id}><div className="lab-heading"><p>{eyebrow}</p><h2>{title}</h2><button onClick={onExplore} className={mode==="explore"?"active":""}><MousePointer2 />{mode==="explore"?"Exploring — drag the stage":"Explore the stage"}</button></div><div className="lab-controls">{children}</div></section>;
+  return <section className={`lab-break lab-${id}`} data-lab={id}><div className="lab-heading"><p>{eyebrow}</p><h2>{title}</h2><button onClick={onExplore} className={mode==="explore"?"active":""}><MousePointer2 />{mode==="explore"?"3D open — drag the stage":"Open calibrated 3D"}</button></div><div className="lab-controls">{children}</div></section>;
 }
 
 function GeometryLab({ rig,selectedCamera,setSelectedCamera,depth,depthIndex,setDepthIndex,mode,setMode }:{rig:Rig|null;selectedCamera:number;setSelectedCamera:(index:number)=>void;depth:number[];depthIndex:number;setDepthIndex:(index:number)=>void;mode:"guided"|"explore";setMode:(mode:"guided"|"explore")=>void}) {
@@ -138,23 +140,23 @@ export default function LssExplainer() {
   const stats=useMemo(()=>probability&&groundTruth?binaryStats(Array.from(probability),Array.from(groundTruth),threshold):null,[probability,groundTruth,threshold]);
   const trajectories=useMemo<Trajectory[]>(()=>{const paths=Array.from({length:9},(_,index)=>Array.from({length:21},(_,sample)=>{const y=sample*.72;return[(index-4)*.017*y*y,y] as [number,number];}));const map=([x,y]:[number,number])=>.055*Math.abs(x)+.85*Math.exp(-((x-2.3)**2+(y-9)**2)/5)+.5*Math.exp(-((x+1.4)**2+(y-13)**2)/3),costs=paths.map((path)=>trajectoryCost(path,map,.14)),probabilities=boltzmannProbabilities(costs,temperature);return costs.map((cost,index)=>({name:index===costs.indexOf(Math.min(...costs))?"minimum cost":`template ${index+1}`,points:paths[index],cost,probability:probabilities[index]})).sort((a,b)=>a.cost-b.cost);},[temperature]);
   const handleSelect=(value:SceneSelection)=>{if(value.kind==="camera")setSelectedCamera(value.index);if(value.kind==="depth")setDepthIndex(value.bin);if(value.kind==="lidar")setSelectedLidar(value.index);if(value.kind==="trajectory")setSelectedTrajectory(value.index);setSelection(value);};
-  const scene=SCENES[activeScene],showThree=scene.stageView!=="illustration"||mode==="explore";
+  const scene=SCENES[activeScene],showThree=mode==="explore";
 
   return <main className={`visual-essay scene-${activeScene} mode-${mode}`}>
-    <header className="essay-header"><a href={asset("/")}><span>LSS</span><b>EXPLAINED</b><sup>v5</sup></a><div><button onClick={()=>setContentsOpen(!contentsOpen)} aria-expanded={contentsOpen}><Menu />Contents</button><a href={asset("/articles/lift-splat-shoot-source-notes.md")}>Source notes</a><a href="https://github.com/hova88/lss-explained">GitHub ↗</a></div></header>
+    <header className="essay-header"><a href={asset("/")}><span>LSS</span><b>EXPLAINED</b><sup>v6</sup></a><div><button onClick={()=>setContentsOpen(!contentsOpen)} aria-expanded={contentsOpen}><Menu />Contents</button><a href={asset("/articles/lift-splat-shoot-source-notes.md")}>Source notes</a><a href="https://github.com/hova88/lss-explained">GitHub ↗</a></div></header>
     <div className="reading-progress" style={{"--progress":`${((activeScene+progress)/SCENES.length)*100}%`} as React.CSSProperties}><i /></div>
     {contentsOpen&&<nav className="contents-drawer" aria-label="Table of contents"><button className="drawer-close" onClick={()=>setContentsOpen(false)}><X /></button><p>FIELD INDEX · 12 SCENES</p>{SCENES.map((item,index)=><button key={item.id} className={index===activeScene?"active":""} onClick={()=>go(index)}><span>{String(index+1).padStart(2,"0")}</span><b>{item.title}</b><small>{item.act}</small></button>)}</nav>}
 
     <section className="persistent-stage" aria-live="polite">
       <div className={`stage-layer illustration-layer ${showThree?"behind":"front"}`}><IllustrationStage scene={scene} progress={progress} selectedCamera={selectedCamera} depthIndex={depthIndex} /></div>
       <div className={`stage-layer three-layer ${showThree?"front":"behind"}`}><LssScene sceneIndex={activeScene} mode={mode} cameras={rig?.cameras??[]} enabledCameras={enabled} selectedCamera={selectedCamera} depthIndex={depthIndex} depthProbability={depth} lidar={lidar} lidar2ego={rig?.lidar2ego??[[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]]} selectedLidar={selectedLidar} vehicles={rig?.vehicles_ego??[]} bevProbability={probability} groundTruth={groundTruth} lidarOccupancy={lidarOccupancy} contributors={contributors} bevMode={bevMode} threshold={threshold} bevOpacity={bevOpacity} rawGrid={rawGrid} trajectories={trajectories} selectedTrajectory={selectedTrajectory} onSelect={handleSelect} /></div>
-      <div className="stage-caption"><span>{String(activeScene+1).padStart(2,"0")} / {SCENES.length}</span><b>{scene.title}</b><small>{showThree?mode==="explore"?"drag · pinch · click":"calibrated 3D stage":"deterministic ink plate"}</small></div>
-      {scene.lab&&<button className="explore-toggle" onClick={()=>setMode(mode==="guided"?"explore":"guided")}><MousePointer2 />{mode==="guided"?"Explore":"Return to story"}</button>}
+      <div className="stage-caption"><span>{String(activeScene+1).padStart(2,"0")} / {SCENES.length}</span><b>{scene.title}</b><small>{showThree?"calibrated 3D · drag · pinch · click":activeScene<2?"hand-drawn field note":"spatial whiteboard"}</small></div>
+      {scene.lab&&<button className="explore-toggle" onClick={()=>setMode(mode==="guided"?"explore":"guided")}><MousePointer2 />{mode==="guided"?"Open 3D":"Return to whiteboard"}</button>}
     </section>
 
     <div className="story-column">
       {SCENES.map((_,index)=><div key={SCENES[index].id}><StoryStep index={index} active={index===activeScene} setRef={(element)=>{stepRefs.current[index]=element;}} />
-        {index===6&&<GeometryLab rig={rig} selectedCamera={selectedCamera} setSelectedCamera={setSelectedCamera} depth={depth} depthIndex={depthIndex} setDepthIndex={setDepthIndex} mode={mode} setMode={setMode} />}
+        {index===7&&<GeometryLab rig={rig} selectedCamera={selectedCamera} setSelectedCamera={setSelectedCamera} depth={depth} depthIndex={depthIndex} setDepthIndex={setDepthIndex} mode={mode} setMode={setMode} />}
         {index===10&&<BevLab rig={rig} selectedCamera={selectedCamera} setSelectedCamera={setSelectedCamera} bevMode={bevMode} setBevMode={setBevMode} threshold={threshold} setThreshold={setThreshold} opacity={bevOpacity} setOpacity={setBevOpacity} rawGrid={rawGrid} setRawGrid={setRawGrid} stats={stats} mode={mode} setMode={setMode} activeVariant={activeVariant} />}
         {index===11&&<RobustnessLab rig={rig} selectedCamera={selectedCamera} setSelectedCamera={setSelectedCamera} enabled={enabled} setEnabled={setEnabled} yaw={yaw} setYaw={setYaw} trajectories={trajectories} selectedTrajectory={selectedTrajectory} setSelectedTrajectory={setSelectedTrajectory} temperature={temperature} setTemperature={setTemperature} mode={mode} setMode={setMode} />}
       </div>)}
