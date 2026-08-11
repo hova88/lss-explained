@@ -35,7 +35,7 @@ nuScenes sample token: `ca9a282c9e77460f8360f564131a8af5`.
 - LiDAR binary shape `[34688,5]`, six positive-depth/in-image projection counts, BEV occupancy counts, sensor time deltas, and direct-vs-static transform residuals.
 - Every camera rotation has determinant ≈1 and orthogonality error below `1e-6`.
 
-The v2 model contract hash is `5ad419e2468bdded5ee88a779734a4664a37d5d415cf81ffb995c31f6e9b52de`; the full depth/context contract hash is `6580cf96932f02633c501ad0da03c525ef0a12ad2059235d08205fef5e705936`; the alignment contract hash is `db98b14c5a01f4f81c05f69fcb93495ec3ff75f4bb186c7157345fb27dd5a503`.
+The artifact schema-v2 model contract hash is `5ad419e2468bdded5ee88a779734a4664a37d5d415cf81ffb995c31f6e9b52de`; the full depth/context contract hash is `6580cf96932f02633c501ad0da03c525ef0a12ad2059235d08205fef5e705936`; the alignment contract hash is `db98b14c5a01f4f81c05f69fcb93495ec3ff75f4bb186c7157345fb27dd5a503`.
 
 ## Evidence labels
 

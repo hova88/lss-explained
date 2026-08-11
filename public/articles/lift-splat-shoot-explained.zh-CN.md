@@ -17,9 +17,31 @@ LSS 的核心问题因此是：已知任意数量相机的图像、内参和外�
 
 本文使用 nuScenes sample `ca9a282c9e77460f8360f564131a8af5`。六张 JPEG、`cam2img`、`cam2ego`、`lidar2cam`、`ego2global` 来自固定 commit 的 OpenMMLab demo；模型结果由固定 commit 的官方 LSS 代码严格加载 `model525000.pt` 后离线导出。浏览器不下载权重，也不运行 PyTorch。
 
-交互站 v2 把学习路线扩展为 15 章：为什么需要 BEV、坐标系账本、矩阵来源、矩阵组合、图像预处理、像素射线、特征 anchor、Lift、精确 `get_geometry`、六相机 ego 对齐、Splat、BEV 编码器、真实样本核验、训练与鲁棒性、Shoot 与局限。下面正文先解释模型主线，后面的坐标附录再把所有容易混淆的细节逐一展开。
+交互站 v3 不再把知识点平铺在同一画面，而是组织成 7 幕、17 章的课程：任务与完整链路、训练样本、图像预处理、CamEncode、Lift、精确几何、Splat、BEV 编码、监督、推理后处理、真实证据与 Shoot。每章先回答一个问题，再分三层解锁机制、数值和代码映射；后面的坐标附录把最容易混淆的细节逐一展开。
 
-## 1. 任意相机阵列：先把输入的语义说清楚
+## 1. 先走完一次：输入、模型、监督与输出
+
+在钻进任何矩阵前，先把整个系统看成一条完整数据流。一次推理的输入是 `N` 张相机图、每台相机的内参 `K`、相机到自车的旋转 `R` 和平移 `t`，以及图像 resize/crop 产生的 `post_rot`、`post_trans`。公开车辆分割 checkpoint 的输出不是 3D box，也不是轨迹，而是自车周围 `200×200` 个网格的 vehicle logit：
+
+```text
+images + calibration
+→ image preprocessing
+→ shared CamEncode
+→ latent depth Lift
+→ calibrated camera-to-ego geometry
+→ pillar sum Splat
+→ BevEncode
+→ vehicle logits
+→ sigmoid probability / threshold mask
+```
+
+其中有三段必须分清。第一段是可学习的图像理解：CamEncode 同时产生深度分配 `α` 和语义 context。第二段是不可学习的标定几何：把每个候选深度的位置精确变到 ego。第三段重新回到可学习推理：BEV CNN 根据聚合特征输出任务 logit。
+
+训练时还要多一条监督支路。nuScenes 的车辆 3D 框先被栅格化成 ego-frame BEV mask，`BCEWithLogitsLoss` 将预测 logit 与 mask 比较，梯度从 BEV 头穿过 sum pooling，最终同时塑造 context 和 latent depth。LiDAR 从未进入这条前向路径；本站的点云只在证据实验室用来检查空间对齐。
+
+这个全景非常重要：LSS 不是“做一个深度图，再做 3D 检测”的串联系统。它让最终 BEV 任务自己决定怎样沿深度分配图像语义，再用显式几何把这些语义放进共同坐标系。
+
+## 2. 任意相机阵列：先把训练样本说清楚
 
 这一帧有 `CAM_FRONT_LEFT`、`CAM_FRONT`、`CAM_FRONT_RIGHT`、`CAM_BACK_LEFT`、`CAM_BACK`、`CAM_BACK_RIGHT` 六个视角。所谓“任意阵列”不等于模型完全不受覆盖范围影响，而是计算图不要求相机在张量的某个固定槽位承担固定语义。
 
@@ -33,7 +55,21 @@ LSS 的核心问题因此是：已知任意数量相机的图像、内参和外�
 
 `cam2ego` 是一个 4×4 齐次变换。左上角 3×3 为旋转 `R`，最后一列前三项为平移 `t`。站点点选任一相机时展示的就是固定样本的真实矩阵，而非为了画面好看编造的姿态。
 
-## 2. 一个像素不是一个三维点
+一个训练 batch 的核心张量可以写成：
+
+```text
+imgs        [B,N,3,128,352]
+rots        [B,N,3,3]       camera → ego rotation
+trans       [B,N,3]         camera → ego translation
+intrins     [B,N,3,3]       raw-image intrinsics K
+post_rots   [B,N,3,3]       resize/crop image transform
+post_trans  [B,N,3]         resize/crop image translation
+binimg      [B,1,200,200]   training-only BEV vehicle target
+```
+
+官方 `SegmentationData.__getitem__` 返回这些相机张量和 `binimg`。它不返回 LiDAR。数据增强还会随机选择相机；默认训练脚本的 `ncams=5` 是 camera dropout 的一种实现，验证时使用全部六台。
+
+## 3. 图像预处理：像素变了，几何也必须跟着变
 
 针孔相机把三维射线压缩成一个像素。给定像素 `(u,v)`，先写成齐次坐标 `[u,v,1]ᵀ`，乘以 `K⁻¹` 只能恢复相机坐标中的射线方向。射线上任意正深度 `d` 都会投到同一个像素：
 
@@ -45,11 +81,13 @@ p_cam(d) = K⁻¹ [d·u, d·v, d]ᵀ
 
 官方训练和验证并不直接使用 900×1600 原图。输入会被缩放并裁成 128×352。本文固定样本的验证预处理为：缩放系数 0.22，得到 198×352，再从纵向第 48 行裁出 128 行。这个增强可以写成后变换 `A`；几何反投影前必须先计算 `A⁻¹`。如果在裁剪后的像素上直接套原图内参，射线方向就会系统性错误。
 
-交互页面第二章让你点击真实图片像素，并同时显示 `A⁻¹ → K⁻¹ → λr`。红点看起来已经“选中一个位置”，但三维场景里显示的仍是一整条线——这是理解 Lift 的前提。
+交互页面第五章并排显示原图和网络输入；第七章让你点击真实网络像素，并同步显示 `A⁻¹ → K⁻¹ → λr`。红点看起来已经“选中一个位置”，但三维场景里显示的仍是一整条线——这是理解 Lift 的前提。
 
-## 3. Lift：把深度当作潜变量
+## 4. CamEncode 与 Lift：把深度当作潜变量
 
-官方相机编码器以 EfficientNet-B0 为主干。对每张 128×352 图像，它输出 8×22 的空间特征。每个空间位置通过一个 1×1 卷积同时生成两部分：
+官方相机编码器以 EfficientNet-B0 为主干。`Up` 模块把较深的 `/32` 特征上采样，与 `/16` 特征拼接融合，因此每张 128×352 网络图最终对应 8×22 的空间特征。所有相机共享同一个 CamEncode；它们不是六套独立参数。
+
+每个 8×22 位置通过一个 1×1 卷积同时生成 `D+C=41+64=105` 个输出，再拆成两部分：
 
 - 41 个深度 logit，对应 4 米到 44 米、步长 1 米；
 - 64 维 context 向量 `c`。
@@ -72,7 +110,7 @@ lifted[d, channel] = α(d) × c[channel]
 
 站点的 checkpoint 模式展示 `model525000.pt` 对固定图片真实导出的 41 维分布；one-hot、uniform、multi-modal 三个模式是教学对照，并有明确标签。
 
-## 4. 从相机到 ego：每一步都可以验算
+## 5. 从相机到 ego：每一步都可以验算
 
 对视锥格点 `(u',v',d)`，官方 `get_geometry` 的计算可以按下面顺序理解：
 
@@ -92,7 +130,7 @@ p_ego = R K⁻¹ [d·u, d·v, d]ᵀ + t
 
 为什么显式 ego 变换重要？如果所有相机仍留在各自坐标系，同一个路口会出现六份不兼容位置。把它们变到 ego 后，来自不同相机但指向同一辆车的特征才能落到附近网格中。对整个 ego 坐标施加旋转或平移时，几何点和 BEV 网格一起改变，后面的卷积则在新网格上继续工作。
 
-## 5. Splat：从 43,296 个样本变成 200×200
+## 6. Splat：从 43,296 个样本变成 200×200
 
 LSS 使用的 BEV 范围是 x、y 各 `[-50,50)` 米，单元大小 0.5 米，所以平面为 200×200。z 范围 `[-10,10)` 只有一个 20 米高的 bin；它本质上是“柱子”，不是细分的三维体素栅格。
 
@@ -116,7 +154,7 @@ rank = x·(Y·Z·B) + y·(Z·B) + z·B + b
 
 最后把聚合向量写入 `[B,C,Z,X,Y]`，再把 z 维拼到通道维。原始配置只有一个 z bin，所以得到 `[B,64,200,200]`。
 
-## 6. BEV 编码器：几何结束，卷积开始
+## 7. BEV 编码器：几何结束，卷积开始
 
 Splat 的输出已经是规则二维网格，后续可以使用成熟的二维 CNN。官方 `BevEncode` 采用 ResNet-18 的若干层：先下采样，获得不同分辨率的特征；把深层特征上采样 4 倍，与较浅层拼接并卷积；再上采样 2 倍，回到原始 200×200 分辨率。车辆分割头输出 `[B,1,200,200]` logit。
 
@@ -133,9 +171,11 @@ Splat 的输出已经是规则二维网格，后续可以使用成熟的二维 C
 
 本文导出的 BEV 图不是手工热图：脚本严格加载官方 checkpoint，缓存相机特征，执行真实几何、voxel pooling 和 BEV encoder，再把 sigmoid 概率映射为颜色。原始 float16 logits 也以 base64 小端数组保存在数据契约中，可按 shape 复核。
 
-## 7. 监督究竟教会了什么
+## 8. 监督究竟教会了什么
 
 车辆分割将 nuScenes 车辆标注栅格化为 BEV mask，用带正样本权重的 BCEWithLogits 训练。地图任务以 drivable area 和 lane boundary 为目标。监督只在最终 BEV 上出现，因此相机编码器必须学会同时产生“是什么”的 context 与“应该放在哪里”的 latent depth。
+
+这里有一个值得保留的论文/代码差异：论文 §4.4 描述车辆 BCE 的正样本权重为 `1.0`，固定官方 `train.py` 的默认参数却是 `2.13`。本站分别标出两者，不用其中一个覆盖另一个。训练脚本还使用 Adam、梯度裁剪和 10,000 step 验证间隔；论文报告 300k steps、学习率 `1e−3`、weight decay `1e−7`。
 
 论文 Table 1 在 nuScenes 上的 IoU 为：
 
@@ -150,15 +190,28 @@ Splat 的输出已经是规则二维网格，后续可以使用成熟的二维 C
 
 对照也揭示了结构归纳偏置的作用：纯 CNN 必须自己学会跨相机的空间关系；冻结相机编码器会限制 context/depth 为任务适配；OFT 沿射线复制相同特征，缺少可学习深度分配。LSS 通过显式几何加可学习 `α(d)`，在这些对照上更好。
 
-## 8. 鲁棒性与新相机阵列
+## 9. 推理与后处理：模型真正做了什么、没有做什么
+
+验证或部署时没有 `binimg`，也不再计算 loss。模型只执行相机到 BEV 的前向，得到 `[B,1,200,200]` 的原始 logit `ℓ`。概率显示由标准 sigmoid 得到：
+
+```text
+p = sigmoid(ℓ) = 1 / (1 + exp(-ℓ))
+mask = p > threshold
+```
+
+官方 `get_val_info` 用 `preds > 0` 计算交并比，这与 `sigmoid(preds) > 0.5` 完全等价。它没有为这个语义分割 checkpoint 执行 3D box decode、NMS、类别关联或 tracking。本站的 threshold、GT、false positive、false negative 是从同一份原始 logit 和 nuScenes mask 即时重算的单帧诊断层。
+
+因此，原始 LSS 的“后处理”很薄：logit 转概率和按需要阈值化。几何映射、pillar pooling 和 BevEncode 都属于模型前向本身，不应被误称为后处理；Shoot 则是论文的另一个任务头，而非车辆分割后的必经步骤。
+
+## 10. 鲁棒性与新相机阵列
 
 相机可能失效，外参也可能有小偏差。论文 §5.3 的关键结论是：训练时随机丢相机能提高测试时面对相机缺失的鲁棒性；训练时加入外参噪声能改善大测试噪声下的表现，但在测试误差很小时，无噪声训练模型可能更好，因为它更敢相信准确 splat 位置。
 
 论文还做了两类“任意阵列”实验。其一，只在六相机中的四个上训练，再把未见过的相机加入测试，性能随新增视角提升；Table 3 从四相机 26.53 IoU，提高到加入两个新相机的 27.94。其二，从 nuScenes 训练后直接在相机布局完全不同的 Lyft 上测试，LSS 的 Car/Vehicle IoU 为 21.35/22.59，明显高于列出的 CNN、Frozen Encoder 和 OFT 基线。
 
-本站第八章的开关不是复刻这些数据集实验。它固定同一 checkpoint 和同一帧，离线导出六种 leave-one-camera-out 结果，以及只对 `CAM_FRONT` 外参旋转施加 ego z 轴 `−3°/0°/+3°` 的结果。它们适合观察局部变化，不足以形成鲁棒性统计结论。
+本站第十六章的开关不是复刻这些数据集实验。它固定同一 checkpoint 和同一帧，离线导出六种 leave-one-camera-out 结果，以及只对 `CAM_FRONT` 外参旋转施加 ego z 轴 `−3°/0°/+3°` 的结果。它们适合观察局部变化，不足以形成鲁棒性统计结论。
 
-## 9. Shoot：把轨迹放进代价图
+## 11. Shoot：把轨迹放进代价图
 
 “Shoot”不是车辆分割的必要步骤，而是论文展示 BEV 表征可用于规划的任务头。网络预测空间代价图 `c_o(x,y)`；每条模板轨迹经过一系列 `(x,y)`，其得分由沿轨迹累积代价决定：
 
@@ -172,7 +225,7 @@ p(τ | o) = exp(-Σ c_o(x,y)) / Στ' exp(-Σ c_o(x,y))
 
 官方公开仓库没有发布规划 checkpoint。因此本站只实现论文方程：绘制 1000 模板的代表子集，在教学代价场中累加每条轨迹代价，再以温度可调的 Boltzmann softmax 显示概率。它不是官方规划推理，也绝不使用“真实模型输出”标签。
 
-## 10. Oracle depth、局限与闭环
+## 12. Oracle depth、局限与闭环
 
 论文用带真实 LiDAR 深度的 PointPillars 风格模型作为 oracle depth 对照。Table 5 中，nuScenes Car/Vehicle：单扫描 oracle 为 40.26/44.48，多扫描为 45.36/49.51，Lift-Splat 为 32.06/32.07。地图 drivable area 上差距较小，但 lane 和车辆仍有明显空间。作者据此判断：视频相机推理可能是获得足够深度线索、进一步接近或超过 LiDAR 的必要方向。
 
@@ -187,7 +240,7 @@ p(τ | o) = exp(-Σ c_o(x,y)) / Στ' exp(-Σ c_o(x,y))
 
 即便如此，LSS 建立了一个影响深远的范式：先让每个相机在自身图像平面提取语义，再用显式几何把不确定深度的特征带入共同 BEV，最后让二维 CNN 在 ego 网格里完成任务。后来的很多方法会改进深度、时间、融合或骨干，但“相机 → latent 3D → BEV”的问题组织方式由此变得清晰。
 
-## 11. 如何审计本站结果
+## 13. 如何审计本站结果
 
 仓库的 `EVIDENCE.md` 记录输入 commit 与 SHA-256；`public/data/rig.json` 包含六相机矩阵、图像哈希、网格和样本 token；`model-features.json` 包含六相机完整 depth/context 的 float16 base64 数组和可直接展示的 probe；`model-artifacts.json` 包含十组 200×200 logits、输出统计、PNG 路径、GT mask、shape 与证据标签。
 
@@ -195,7 +248,7 @@ p(τ | o) = exp(-Σ c_o(x,y)) / Στ' exp(-Σ c_o(x,y))
 
 这套契约刻意把“我在论文里读到的”“我用官方 checkpoint 算出的”和“我为了教学构造的”分开。好的可视化不应靠模糊证据来源换取戏剧性；它应该让每一次点击都能回到一条明确的数学、代码或数据链路。
 
-## 12. 坐标附录一：先彻底理解“坐标”和“点”
+## 14. 坐标附录一：先彻底理解“坐标”和“点”
 
 一个几何点本身并没有固定的三元数。`[3, 1, 0.5]` 只有在说明“相对于哪个原点、沿哪三根轴、用什么单位”之后才有意义。同一个物理点在 LiDAR、相机、ego 和 global 中会拥有不同数值。
 
@@ -222,7 +275,7 @@ det(R) = +1
 R⁻¹ = Rᵀ
 ```
 
-若行列式为 `−1`，通常意味着混入了反射；若 `RᵀR` 明显不接近单位阵，则它不是纯旋转。v2 的矩阵检查器会显示这些残差。
+若行列式为 `−1`，通常意味着混入了反射；若 `RᵀR` 明显不接近单位阵，则它不是纯旋转。v3 的矩阵检查器会显示这些残差。
 
 刚体变换的逆不是把所有元素分别取倒数：
 
@@ -234,7 +287,7 @@ T_A→B⁻¹ = T_B→A
 
 为什么平移是 `−Rᵀt` 而不是简单 `−t`？因为 `t` 原本用 B 的轴表达；反向移动前必须先把它旋回 A 的轴。
 
-## 13. 坐标附录二：矩阵如何从 nuScenes 元数据而来
+## 15. 坐标附录二：矩阵如何从 nuScenes 元数据而来
 
 nuScenes 将两类信息分开保存：
 
@@ -267,7 +320,7 @@ inv(cam2ego) · lidar2ego
 
 原始 LSS 在单帧 camera-to-BEV 路径中使用每台相机的 `K` 和 `cam2ego`，不使用 LiDAR，也不把点先变到 global。global 主要在数据集的跨时刻和地图语义中承担共同参考。
 
-## 14. 坐标附录三：原图、网络图和 8×22 anchor
+## 16. 坐标附录三：原图、网络图和 8×22 anchor
 
 固定图片原始大小为 1600×900。验证预处理把它缩放为 352×198，再从纵向第 48 行开始裁出 352×128。若用二维仿射表达：
 
@@ -296,7 +349,7 @@ u_w = 351w / 21
 v_h = 127h / 7
 ```
 
-v1 页面虽然导出了完整张量，但点击任意像素后仍固定显示 `[4,11]` 的深度分布。v2 已修正：点击先找到最近官方 anchor，然后使用扁平索引：
+早期页面虽然导出了完整张量，但点击任意像素后仍固定显示 `[4,11]` 的深度分布。v3 已彻底移除该回退：点击先找到最近官方 anchor，然后使用扁平索引：
 
 ```text
 depth offset = camera·41·8·22 + d·8·22 + h·22 + w
@@ -305,7 +358,7 @@ context offset = camera·64·8·22 + c·8·22 + h·22 + w
 
 因此屏幕红点、紫色 anchor、41 维 depth、64 维 context、三维采样点和最终 BEV cell 都是同一个真实特征位置。
 
-## 15. 坐标附录四：完整相机反投影与回投验证
+## 17. 坐标附录四：完整相机反投影与回投验证
 
 选定网络 anchor `(u',v')` 和深度 `d` 后，逐步计算：
 
@@ -331,7 +384,7 @@ q_net_again = post_rot [u_raw,v_raw,1]ᵀ + post_trans
 
 正确实现应回到原 anchor，只剩浮点误差。本站还离线保存六相机各三个位置——首个、中心和末尾 frustum anchor——共 18 个官方 `get_geometry` 黄金结果，用于防止浏览器实现悄悄出现乘法顺序、转置或轴符号错误。
 
-## 16. 坐标附录五：BEV 数组为什么容易看反
+## 18. 坐标附录五：BEV 数组为什么容易看反
 
 LSS 的网格范围为 x、y 各 `[-50,50)`，分辨率 0.5 米：
 
@@ -347,13 +400,13 @@ screen_u = 1 − (iy + 0.5)/200
 screen_v = 1 − (ix + 0.5)/200
 ```
 
-之所以两个式子都有 `1−`，是因为屏幕 u 向右而 ego y 向左，屏幕 v 向下而 ego x 向前/向上。v2 删除了纹理层的临时 `repeat.x=-1`，模型概率、GT、LiDAR occupancy、GT 框和点击反查全部调用同一映射。测试固定检查 ego 原点、四角、前/后/左/右地标和 round trip。
+之所以两个式子都有 `1−`，是因为屏幕 u 向右而 ego y 向左，屏幕 v 向下而 ego x 向前/向上。v3 不允许纹理层再引入临时翻转；模型概率、GT、LiDAR occupancy、GT 框和点击反查全部调用同一映射。测试固定检查 ego 原点、四角、前/后/左/右地标和 round trip。
 
 原始相机图和 BEV 热图不应具有相同二维轮廓：相机图是透视投影，一个远处车辆可能只有几十像素；BEV 是米制俯视网格，物体大小接近真实尺寸。正确的“对应”不是让两张图看起来相似，而是选中同一物理证据后，能够沿 camera pixel → ray/depth → ego → BEV cell 往返追踪。
 
-## 17. 坐标附录六：LiDAR 三视图只用于核验
+## 19. 坐标附录六：LiDAR 三视图只用于核验
 
-固定 OpenMMLab demo 同时提供这一帧的 `LIDAR_TOP` 文件，包含 34,688 个 `[x,y,z,intensity,ring]` float32 点。v2 将原始二进制文件直接提交，并记录 SHA-256；浏览器用 typed array 读取，不进行模型推理。
+固定 OpenMMLab demo 同时提供这一帧的 `LIDAR_TOP` 文件，包含 34,688 个 `[x,y,z,intensity,ring]` float32 点。v3 将原始二进制文件直接提交，并记录 SHA-256；浏览器用 typed array 读取，不进行模型推理。
 
 同一点有两条可核验路径：
 
@@ -366,7 +419,7 @@ LiDAR → lidar2cam → camera → K → raw image pixel
 
 LiDAR overlay 的证据标签始终为 `REFERENCE LIDAR · NOT MODEL INPUT`。它不能用来暗示 LSS 在推理时获得了深度真值；LSS 的 depth α 仍然只来自相机网络和最终任务监督。
 
-## 18. 如何阅读单帧模型概率
+## 20. 如何阅读单帧模型概率
 
 车辆头输出 logit `ℓ(x,y)`，网页显示：
 
@@ -374,7 +427,7 @@ LiDAR overlay 的证据标签始终为 `REFERENCE LIDAR · NOT MODEL INPUT`。�
 p(x,y)=sigmoid(ℓ)=1/(1+exp(−ℓ))
 ```
 
-v2 默认使用低概率透明的连续色带，并提供 threshold、GT 和 errors 模式。给定阈值后：
+v3 默认使用低概率透明的连续色带，并提供 threshold、GT 和 errors 模式。给定阈值后：
 
 - TP：模型和 GT 都是车辆；
 - FP：模型认为是车辆、GT 不是；
@@ -389,3 +442,5 @@ v2 默认使用低概率透明的连续色带，并提供 threshold、GT 和 err
 2. NVIDIA, official `lift-splat-shoot` implementation, commit `2903467c91ee9c12f0917a12c22ab1f04e607ae0`.
 3. OpenMMLab MMDetection3D nuScenes demo, commit `fe25f7a51d36e3702f961e198894580d83c4387b`.
 4. nuScenes Dataset Terms of Use.
+5. Akash Prakash, [*Lift Splat Shoot Explained*](https://akashprakas.github.io/akashBlog/posts/2025-11-15-LiftSplatShoot.html)（教学结构参考；所有技术结论均回查论文与固定官方代码）。
+6. UCLA Deep Vision CS163 Team 21, [*Bird's Eye View Segmentation*](https://ucladeepvision.github.io/CS163-Projects-2024Fall/2024/12/13/team21-BEVSeg.html)（BEV 动机与入门叙事参考）。
