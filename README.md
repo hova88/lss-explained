@@ -4,7 +4,7 @@ An interactive, bilingual, source-audited course on the original ECCV 2020 **Lif
 
 **Live:** https://hova88.github.io/lss-explained/
 
-This is the camera-to-BEV companion to [pointpillars-explained](https://github.com/hova88/pointpillars-explained). Version 3 reorganizes the experience into seven acts—Mission, Inputs, Image, Geometry, BEV, Learn and Proof—and reveals each lesson in three layers instead of showing every fact at once. A persistent transform graph and synchronized camera/3D/BEV evidence use the sample's 34,688-point LiDAR scan. LiDAR is a reference overlay only and is never passed into LSS inference.
+This is the camera-to-BEV companion to [pointpillars-explained](https://github.com/hova88/pointpillars-explained). Version 4 turns the experience into a single-focus course across seven acts—Mission, Inputs, Image, Geometry, BEV, Learn and Proof. Each chapter now moves from a three-layer explanation card into a dedicated interactive lab while the central 3D scene remains the visual protagonist. Either card can collapse into a small edge handle for an unobstructed scene, and the camera recenters automatically. Coordinate tools appear only when they are relevant, and synchronized camera/3D/BEV evidence uses the sample's 34,688-point LiDAR scan. LiDAR is a reference overlay only and is never passed into LSS inference.
 
 ## Course flow
 

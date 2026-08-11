@@ -1,6 +1,6 @@
 # Coverage contract
 
-The v3 course maps the original LSS paper, the pinned official implementation, and one fixed nuScenes sample to 17 progressive chapters. Secondary tutorials influenced teaching order only; technical claims are anchored to the paper or source.
+The v4 course maps the original LSS paper, the pinned official implementation, and one fixed nuScenes sample to 17 progressive chapters. Every chapter alternates between a staged explanation and an interactive lab around the same central scene. Secondary tutorials influenced teaching order only; technical claims are anchored to the paper or source.
 
 | # | Act / interactive chapter | Paper / implementation coverage | Evidence |
 |---:|---|---|---|

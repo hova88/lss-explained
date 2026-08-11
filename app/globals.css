@@ -437,3 +437,164 @@ button { -webkit-tap-highlight-color: transparent; }
 @media (prefers-reduced-motion: reduce) {
   *, *:before, *:after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+/* v4 · one stage, one card, one idea at a time */
+.lss-app:before { content: ""; position: absolute; z-index: 2; inset: 0; pointer-events: none; transition: background .8s cubic-bezier(.2,.8,.2,1); }
+.phase-lesson:before { background: linear-gradient(90deg, rgba(241,238,229,.7) 0, rgba(241,238,229,.12) 39%, transparent 62%); }
+.phase-lab:before { background: linear-gradient(270deg, rgba(241,238,229,.68) 0, rgba(241,238,229,.1) 44%, transparent 67%); }
+.lss-scene:after { background: radial-gradient(circle at 52% 47%, transparent 0 31%, rgba(241,238,229,.05) 58%, rgba(241,238,229,.34) 100%); }
+
+.site-header { height: 52px; padding: 0 24px; border-bottom-color: rgba(23,25,24,.1); background: rgba(241,238,229,.7); backdrop-filter: blur(16px) saturate(.8); }
+.site-header > a { font-size: 10px; }
+.site-header > a span { width: 34px; height: 26px; margin-right: 8px; }
+.site-header > div { gap: 16px; font-size: 7px; }
+
+.curriculum-rail { z-index: 22; top: 59px; left: 50%; right: auto; width: min(820px, calc(100vw - 48px)); height: 36px; border: 0; border-bottom: 1px solid rgba(23,25,24,.16); background: transparent; backdrop-filter: none; transform: translateX(-50%); }
+.curriculum-rail:before { top: 12px; left: 3%; right: 3%; opacity: .7; }
+.curriculum-rail button { grid-template-columns: 12px 1fr; grid-template-rows: 15px 10px; padding: 1px 5px; }
+.curriculum-rail button i { width: 7px; height: 7px; }
+.curriculum-rail button span { font-size: 6px; }
+.curriculum-rail button small { font-size: 5px; opacity: .7; }
+.curriculum-rail button.active i { width: 11px; height: 11px; }
+.rail-signal { top: 11px; }
+
+.scene-caption { position: absolute; z-index: 3; top: 18%; left: 50%; display: grid; justify-items: center; pointer-events: none; transform: translateX(-50%); color: var(--accent); text-align: center; transition: opacity .55s, transform .8s cubic-bezier(.2,.8,.2,1); }
+.scene-caption b { color: rgba(23,25,24,.045); font: 400 clamp(108px, 18vw, 260px)/.72 'Libre Caslon Display', Georgia, serif; letter-spacing: -.09em; }
+.scene-caption span { margin-top: 15px; color: rgba(23,25,24,.32); font: 500 7px/1 DM Mono, monospace; letter-spacing: .3em; text-transform: uppercase; }
+.scene-caption small { margin-top: 8px; color: var(--accent); font: 500 6px/1 DM Mono, monospace; letter-spacing: .16em; text-transform: uppercase; }
+.phase-lesson .scene-caption { transform: translateX(-42%); }
+.phase-lab .scene-caption { transform: translateX(-58%); }
+
+.course-card-layer { position: absolute; z-index: 16; inset: 0; pointer-events: none; }
+.course-card-layer > * { pointer-events: auto; }
+.lesson-panel { top: 116px; bottom: 84px; left: 28px; width: 372px; padding: 25px 27px 20px; border: 1px solid rgba(23,25,24,.18); border-radius: 2px; background: rgba(250,248,241,.88); box-shadow: 0 28px 90px rgba(52,45,31,.13), 0 1px 0 rgba(255,255,255,.7) inset; backdrop-filter: blur(20px) saturate(.85); animation: lessonInV4 .66s cubic-bezier(.16,1,.3,1) both; }
+.lesson-panel:before { width: 2px; top: 22px; bottom: 22px; height: auto; }
+.lesson-stage { margin-top: 26px; }
+.lesson-panel h1 { margin: 10px 0 12px; font-size: 40px; line-height: .97; }
+.lesson-question { font-size: 11px; line-height: 1.65; }
+.lesson-answer { margin-top: 15px; font-size: 10px; line-height: 1.72; }
+.lesson-layers { gap: 11px; margin-top: 17px; }
+.lesson-layers li { grid-template-columns: 25px 1fr; gap: 9px; }
+.lesson-layers li i { width: 22px; height: 22px; background: rgba(250,248,241,.7); }
+.lesson-layers li span { font-size: 9px; line-height: 1.62; }
+.lesson-source { margin-top: 15px; }
+.deeper-button { min-height: 44px; margin-top: 17px; transition: background .25s, border-color .25s, transform .25s; }
+.deeper-button:hover { transform: translateY(-2px); }
+
+.stage-dock { top: 112px; right: 28px; bottom: auto; left: auto; width: min(548px, calc(100vw - 470px)); max-height: calc(100dvh - 196px); display: grid; grid-template-rows: auto minmax(0,auto) auto; overflow: hidden; border: 1px solid rgba(23,25,24,.18); border-radius: 2px; background: rgba(250,248,241,.9); box-shadow: 0 28px 90px rgba(52,45,31,.13), 0 1px 0 rgba(255,255,255,.7) inset; backdrop-filter: blur(20px) saturate(.86); animation: labInV4 .72s cubic-bezier(.16,1,.3,1) both; }
+.stage-dock > header { display: grid; grid-template-columns: auto minmax(0,1fr); gap: 13px; min-height: 57px; padding: 10px 13px; border-bottom-color: rgba(23,25,24,.14); background: rgba(255,255,255,.14); }
+.stage-dock > header > div { min-width: 0; }
+.stage-dock > header span { display: block; margin-bottom: 4px; }
+.stage-dock > header p { font-size: 8px; line-height: 1.45; }
+.lab-back { align-self: stretch; border: 0; border-right: 1px solid var(--line); padding: 0 12px 0 0; background: transparent; color: var(--muted); cursor: pointer; font: 500 6px/1.3 DM Mono, monospace; letter-spacing: .06em; }
+.lab-back:hover { color: var(--accent); }
+.stage-dock-body { max-height: calc(100dvh - 303px); min-height: 0; padding: 14px; overscroll-behavior: contain; }
+.stage-dock > footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 50px; padding: 9px 12px; border-top: 1px solid rgba(23,25,24,.14); background: rgba(255,255,255,.16); }
+.stage-dock > footer span { max-width: 180px; color: var(--muted); font: 400 6px/1.45 DM Mono, monospace; }
+.stage-dock > footer button { display: flex; align-items: center; gap: 8px; border: 0; padding: 9px 11px; background: var(--ink); color: var(--paper); cursor: pointer; font: 500 6px/1 DM Mono, monospace; letter-spacing: .06em; }
+.stage-dock > footer button:hover { background: var(--accent); }
+.stage-dock > footer svg { width: 12px; }
+.stage-dock .frame-graph { position: relative; z-index: auto; top: auto; right: auto; left: auto; width: 100%; height: auto; min-height: 64px; margin: 0 0 13px; background: rgba(241,238,229,.55); backdrop-filter: none; }
+
+.lesson-nav { z-index: 28; right: auto; bottom: 16px; left: 50%; width: min(760px, calc(100vw - 48px)); gap: 7px; padding: 6px; border: 1px solid rgba(23,25,24,.16); border-radius: 26px; background: rgba(250,248,241,.78); box-shadow: 0 12px 40px rgba(52,45,31,.09); backdrop-filter: blur(18px); transform: translateX(-50%); }
+.lesson-nav .round { width: 32px; height: 32px; border-color: rgba(23,25,24,.5); background: transparent; }
+.lesson-nav .play { background: var(--ink); }
+.chapter-scrub { gap: 4px; }
+.chapter-scrub button { width: 10px; }
+.phase-switch { display: flex; flex: 0 0 auto; padding: 2px; border: 1px solid var(--line); border-radius: 16px; background: rgba(241,238,229,.7); }
+.phase-switch button { border: 0; border-radius: 12px; padding: 6px 9px; background: transparent; color: var(--muted); cursor: pointer; font: 500 6px/1 DM Mono, monospace; letter-spacing: .06em; }
+.phase-switch button.active { background: var(--accent); color: white; }
+.next-lesson { min-width: 155px; width: 155px; height: 34px; border: 0; border-radius: 18px; padding: 5px 9px 5px 12px; background: var(--ink); color: var(--paper); }
+.next-lesson small { color: #f1a889; }
+.next-lesson b { max-width: 118px; font-size: 6px; }
+.interaction-hint { right: 22px; bottom: 5px; opacity: .62; }
+
+.matrix-inspector, .inspector { z-index: 55; top: 118px; right: 42px; }
+
+@keyframes lessonInV4 { from { opacity: 0; transform: translateX(-34px) scale(.985); filter: blur(4px); } to { opacity: 1; transform: none; filter: none; } }
+@keyframes labInV4 { from { opacity: 0; transform: translateX(34px) scale(.985); filter: blur(4px); } to { opacity: 1; transform: none; filter: none; } }
+
+@media (max-width: 1080px) {
+  .lesson-panel { left: 20px; width: 342px; }
+  .stage-dock { right: 20px; width: min(510px, calc(100vw - 405px)); }
+  .curriculum-rail { left: 50%; right: auto; }
+}
+
+@media (max-width: 760px) {
+  .site-header { height: 48px; padding: 0 11px; }
+  .site-header > a span { width: 31px; height: 24px; }
+  .curriculum-rail { top: 54px; right: auto; left: 50%; width: calc(100vw - 20px); height: 35px; grid-template-columns: repeat(7, minmax(64px,1fr)); transform: translateX(-50%); }
+  .curriculum-rail button { grid-template-columns: 9px 1fr; }
+  .scene-caption { top: 15%; }
+  .scene-caption b { font-size: 116px; }
+  .phase-lesson:before { background: linear-gradient(180deg, rgba(241,238,229,.34) 0, rgba(241,238,229,.05) 55%, transparent 75%); }
+  .phase-lab:before { background: linear-gradient(0deg, rgba(241,238,229,.58) 0, rgba(241,238,229,.08) 62%, transparent 82%); }
+  .lesson-panel { top: 102px; right: 11px; bottom: auto; left: 11px; width: auto; height: auto; max-height: calc(100dvh - 180px); padding: 17px 18px 15px; }
+  .lesson-stage { margin-top: 11px; }
+  .lesson-panel h1 { margin: 6px 0 8px; font-size: 30px; }
+  .lesson-question { font-size: 9px; line-height: 1.45; }
+  .lesson-answer { margin-top: 8px; font-size: 8px; line-height: 1.48; }
+  .lesson-layers { gap: 6px; margin-top: 9px; }
+  .lesson-layers li { grid-template-columns: 18px 1fr; gap: 7px; }
+  .lesson-layers li i { width: 17px; height: 17px; }
+  .lesson-layers li span { font-size: 7px; line-height: 1.42; }
+  .lesson-formula { margin-top: 8px; }
+  .lesson-source { margin-top: 8px; }
+  .deeper-button { min-height: 34px; margin-top: 9px; }
+  .stage-dock { top: auto; right: 10px; bottom: 67px; left: 10px; width: auto; height: auto; max-height: min(57dvh, 520px); }
+  .stage-dock > header { min-height: 45px; padding: 7px 9px; }
+  .stage-dock > header p { display: block; overflow: hidden; font-size: 7px; text-overflow: ellipsis; white-space: nowrap; }
+  .stage-dock-body { max-height: calc(min(57dvh, 520px) - 88px); padding: 9px; }
+  .stage-dock > footer { min-height: 43px; padding: 6px 8px; }
+  .stage-dock > footer span { display: none; }
+  .stage-dock > footer button { margin-left: auto; }
+  .stage-dock .frame-graph { top: auto; right: auto; left: auto; height: 56px; margin-bottom: 9px; }
+  .lesson-nav { right: 8px; bottom: 10px; left: 8px; width: auto; gap: 4px; padding: 4px; transform: none; }
+  .lesson-nav .round { width: 28px; height: 28px; }
+  .chapter-scrub { display: none; }
+  .phase-switch { margin-left: auto; }
+  .phase-switch button { padding: 5px 8px; }
+  .next-lesson { width: 112px; min-width: 112px; height: 30px; }
+  .next-lesson b { max-width: 78px; }
+  .interaction-hint { display: none; }
+  .matrix-inspector, .inspector { top: auto; right: 10px; bottom: 67px; left: 10px; max-height: 56dvh; }
+}
+
+/* v4.1 · the scene must remain legible even while a card is open */
+.lss-app:before { display: none; }
+.lss-scene:after { background: radial-gradient(circle at 52% 47%, transparent 0 45%, rgba(241,238,229,.04) 72%, rgba(241,238,229,.14) 100%); }
+.lesson-panel { width: 344px; background: rgba(250,248,241,.9); }
+.stage-dock { width: min(520px, calc(100vw - 440px)); background: rgba(250,248,241,.91); }
+.card-minimize { border: 0; background: transparent; color: var(--muted); cursor: pointer; font: 500 6px/1 DM Mono, monospace; letter-spacing: .06em; white-space: nowrap; }
+.card-minimize:hover { color: var(--accent); }
+.lesson-panel > .card-minimize { position: absolute; top: 24px; right: 25px; }
+.lesson-panel .lesson-meta { padding-right: 92px; }
+.stage-dock > header { grid-template-columns: auto minmax(0,1fr) auto; }
+.stage-dock > header > .card-minimize { align-self: start; margin-top: 2px; }
+.scene-card-handle { position: absolute; top: 126px; display: grid; gap: 5px; width: 210px; border: 1px solid rgba(23,25,24,.2); padding: 12px 14px; background: rgba(250,248,241,.82); box-shadow: 0 12px 36px rgba(52,45,31,.09); backdrop-filter: blur(12px); cursor: pointer; text-align: left; animation: handleIn .48s cubic-bezier(.16,1,.3,1) both; }
+.scene-card-handle.lesson { left: 20px; border-left: 2px solid var(--accent); }
+.scene-card-handle.lab { right: 20px; border-right: 2px solid var(--accent); }
+.scene-card-handle span, .scene-card-handle i { color: var(--accent); font: 500 6px/1.2 DM Mono, monospace; font-style: normal; letter-spacing: .08em; }
+.scene-card-handle b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 400 17px/1.15 'Libre Caslon Display', Georgia, serif; }
+.scene-card-handle i { color: var(--muted); }
+.scene-card-handle:hover { background: var(--paper-strong); transform: translateY(-2px); }
+.card-is-collapsed .scene-caption { transform: translateX(-50%); opacity: .8; }
+@keyframes handleIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+
+@media (max-width: 1080px) {
+  .lesson-panel { width: 326px; }
+  .stage-dock { width: min(490px, calc(100vw - 385px)); }
+}
+
+@media (max-width: 760px) {
+  .lesson-panel { width: auto; }
+  .stage-dock { width: auto; }
+  .lesson-panel > .card-minimize { top: 18px; right: 17px; }
+  .lesson-panel .lesson-meta { padding-right: 82px; }
+  .stage-dock > header { grid-template-columns: auto minmax(0,1fr); }
+  .stage-dock > header > .card-minimize { grid-column: 2; grid-row: 1; justify-self: end; }
+  .stage-dock > header > div { grid-column: 2; }
+  .scene-card-handle { top: 103px; width: min(210px, calc(100vw - 22px)); padding: 10px 12px; }
+  .scene-card-handle.lesson { left: 11px; }
+  .scene-card-handle.lab { right: 11px; }
+}

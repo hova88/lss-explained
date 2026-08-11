@@ -33,6 +33,7 @@ import { ACTS, CHAPTERS, actForChapter, tx, type Locale } from "./lss-content";
 
 type Mat3 = [[number, number, number], [number, number, number], [number, number, number]];
 type Vec3 = [number, number, number];
+type PanelMode = "lesson" | "lab";
 type EncodedArray = { shape: number[]; dtype: string; data: string };
 type CameraRecord = {
   name: string;
@@ -203,17 +204,20 @@ function LessonPanel({
   locale,
   detail,
   onAdvance,
+  onMinimize,
 }: {
   step: number;
   locale: Locale;
   detail: number;
   onAdvance: () => void;
+  onMinimize: () => void;
 }) {
   const chapter = CHAPTERS[step];
   const act = actForChapter(step);
   const finalDetail = detail === chapter.layers.length - 1;
   return (
     <section className="lesson-panel" key={`${step}-${locale}`} aria-live="polite" aria-labelledby="lesson-title">
+      <button className="card-minimize" onClick={onMinimize} aria-label={locale === "zh-CN" ? "收起卡片，专注场景" : "Minimize card and focus the scene"}>— {locale === "zh-CN" ? "沉浸场景" : "FOCUS SCENE"}</button>
       <div className="lesson-meta">
         <span>{tx(locale, act.label)}</span>
         <b>{String(step + 1).padStart(2, "0")} / {CHAPTERS.length}</b>
@@ -236,8 +240,8 @@ function LessonPanel({
         <small>{chapter.source}</small>
       </div>
       <button className="deeper-button" onClick={onAdvance}>
-        <span>{finalDetail ? (locale === "zh-CN" ? "进入下一章" : "Next chapter") : (locale === "zh-CN" ? "继续深入" : "Go one layer deeper")}</span>
-        <b>{finalDetail ? "→" : `${detail + 2} / 3`}</b>
+        <span>{finalDetail ? (locale === "zh-CN" ? "进入交互实验" : "Enter the interactive lab") : (locale === "zh-CN" ? "继续深入" : "Go one layer deeper")}</span>
+        <b>{finalDetail ? (locale === "zh-CN" ? "动手验证 →" : "EXPLORE →") : `${detail + 2} / 3`}</b>
       </button>
     </section>
   );
@@ -730,6 +734,12 @@ type LabProps = {
   setSelectedTrajectory: (value: number) => void;
   temperature: number;
   setTemperature: (value: number) => void;
+  activeEdge: string;
+  currentEdge: string;
+  setActiveEdge: (value: string) => void;
+  onBack: () => void;
+  onComplete: () => void;
+  onMinimize: () => void;
 };
 
 function ChapterLab(props: LabProps) {
@@ -902,11 +912,20 @@ function ChapterLab(props: LabProps) {
 
   return (
     <section className="stage-dock" key={step}>
-      <header><span>{locale === "zh-CN" ? "现在动手" : "TRY IT NOW"}</span><p>{cue}</p></header>
+      <header>
+        <button className="lab-back" onClick={props.onBack}>← {locale === "zh-CN" ? "返回讲解" : "EXPLANATION"}</button>
+        <div><span>{locale === "zh-CN" ? "现在动手" : "TRY IT NOW"}</span><p>{cue}</p></div>
+        <button className="card-minimize" onClick={props.onMinimize} aria-label={locale === "zh-CN" ? "收起卡片，专注场景" : "Minimize card and focus the scene"}>— {locale === "zh-CN" ? "沉浸场景" : "FOCUS SCENE"}</button>
+      </header>
       <div className="stage-dock-body">
         <TraceRibbon step={step} locale={locale} camera={camera} anchor={props.anchor} trace={props.trace} />
+        {[3, 4, 6, 8, 9, 10, 11, 13, 14].includes(step) && <FrameGraph locale={locale} active={props.activeEdge || props.currentEdge} onActive={props.setActiveEdge} />}
         {body}
       </div>
+      <footer>
+        <span>{locale === "zh-CN" ? "完成本章的交互验证后继续" : "Continue after testing the chapter claim"}</span>
+        <button onClick={props.onComplete}>{step === CHAPTERS.length - 1 ? (locale === "zh-CN" ? "回到开场" : "REPLAY COURSE") : (locale === "zh-CN" ? "完成 · 下一章" : "COMPLETE · NEXT CHAPTER")} <ChevronRight /></button>
+      </footer>
     </section>
   );
 }
@@ -914,6 +933,8 @@ function ChapterLab(props: LabProps) {
 export default function LssExplainer() {
   const [step, setStep] = useState(0);
   const [detail, setDetail] = useState(0);
+  const [panelMode, setPanelMode] = useState<PanelMode>("lesson");
+  const [cardCollapsed, setCardCollapsed] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [locale, setLocale] = useState<Locale>("zh-CN");
   const [rig, setRig] = useState<Rig | null>(null);
@@ -1032,33 +1053,34 @@ export default function LssExplainer() {
   const go = useCallback((value: number) => {
     setStep(Math.max(0, Math.min(CHAPTERS.length - 1, value)));
     setDetail(0);
+    setPanelMode("lesson");
+    setCardCollapsed(false);
     setPlaying(false);
     setSelection(null);
     setActiveEdge("");
   }, []);
   const advanceLesson = useCallback(() => {
-    if (detail < 2) setDetail((value) => value + 1);
-    else if (step < CHAPTERS.length - 1) go(step + 1);
-  }, [detail, step, go]);
+    if (panelMode === "lesson" && detail < 2) setDetail((value) => value + 1);
+    else if (panelMode === "lesson") { setPanelMode("lab"); setCardCollapsed(false); }
+    else go(step === CHAPTERS.length - 1 ? 0 : step + 1);
+  }, [panelMode, detail, step, go]);
+
+  const retreatLesson = useCallback(() => {
+    if (panelMode === "lab") setPanelMode("lesson");
+    else if (detail > 0) setDetail((value) => value - 1);
+    else if (step > 0) go(step - 1);
+  }, [panelMode, detail, step, go]);
 
   useEffect(() => {
     if (!playing) return;
-    const id = window.setInterval(() => {
-      setDetail((value) => {
-        if (value < 2) return value + 1;
-        setStep((current) => current === CHAPTERS.length - 1 ? 0 : current + 1);
-        setSelection(null);
-        setActiveEdge("");
-        return 0;
-      });
-    }, 3600);
+    const id = window.setInterval(advanceLesson, panelMode === "lab" ? 5200 : 3600);
     return () => window.clearInterval(id);
-  }, [playing]);
+  }, [playing, panelMode, advanceLesson]);
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
       if (event.key === "Escape") { setSelection(null); setActiveEdge(""); }
-      if (event.key === "ArrowLeft") go(step - 1);
+      if (event.key === "ArrowLeft") retreatLesson();
       if (event.key === "ArrowRight") advanceLesson();
       if (event.code === "Space" && !["INPUT", "BUTTON", "SELECT"].includes((event.target as HTMLElement)?.tagName)) {
         event.preventDefault();
@@ -1067,7 +1089,7 @@ export default function LssExplainer() {
     };
     addEventListener("keydown", handler);
     return () => removeEventListener("keydown", handler);
-  }, [go, step, advanceLesson]);
+  }, [retreatLesson, advanceLesson]);
 
   const handleSelect = (value: SceneSelection) => {
     if (value.kind === "cell" && contributors) {
@@ -1087,12 +1109,14 @@ export default function LssExplainer() {
     localStorage.setItem("lss-locale", next);
   };
   const currentEdge = ["", "", "", "camera→ego", "raw→network", "", "network→camera", "", geometryStage < 2 ? "raw→network" : geometryStage < 4 ? "network→camera" : "camera→ego", "camera→ego", "ego→BEV", "ego→BEV", "", "ego→BEV", "lidar→ego", "camera→ego", "ego→BEV"][step];
-  const labProps: LabProps = { step, locale, rig, alignment, camera, selectedCamera, setSelectedCamera, pixel, setPixel, anchor, trace, depth, context, contextPlane, contextChannel, setContextChannel, depthIndex, setDepthIndex, depthMode, setDepthMode, geometryStage, setGeometryStage, lidar, selectedLidar, onSelect: handleSelect, bevMode, setBevMode, threshold, setThreshold, bevOpacity, setBevOpacity, lidarColor, setLidarColor, lidarSize, setLidarSize, stats, enabled, setEnabled, yaw, setYaw, activeVariant, model, trajectories, selectedTrajectory, setSelectedTrajectory, temperature, setTemperature };
+  const labProps: LabProps = { step, locale, rig, alignment, camera, selectedCamera, setSelectedCamera, pixel, setPixel, anchor, trace, depth, context, contextPlane, contextChannel, setContextChannel, depthIndex, setDepthIndex, depthMode, setDepthMode, geometryStage, setGeometryStage, lidar, selectedLidar, onSelect: handleSelect, bevMode, setBevMode, threshold, setThreshold, bevOpacity, setBevOpacity, lidarColor, setLidarColor, lidarSize, setLidarSize, stats, enabled, setEnabled, yaw, setYaw, activeVariant, model, trajectories, selectedTrajectory, setSelectedTrajectory, temperature, setTemperature, activeEdge, currentEdge, setActiveEdge, onBack: () => setPanelMode("lesson"), onComplete: advanceLesson, onMinimize: () => setCardCollapsed(true) };
 
   return (
-    <main className={`lss-app step-${step} act-${CHAPTERS[step].act}`}>
+    <main className={`lss-app step-${step} act-${CHAPTERS[step].act} phase-${panelMode} ${cardCollapsed ? "card-is-collapsed" : ""}`}>
       <LssScene
         step={step}
+        panelMode={panelMode}
+        cardVisible={!cardCollapsed}
         enabledCameras={enabled}
         selectedCamera={selectedCamera}
         pixel={pixel}
@@ -1116,7 +1140,7 @@ export default function LssExplainer() {
         onSelect={handleSelect}
       />
       <header className="site-header">
-        <a href={asset("/")}><span>LSS</span> EXPLAINED <sup>v3</sup></a>
+        <a href={asset("/")}><span>LSS</span> EXPLAINED <sup>v4</sup></a>
         <div>
           <div className="language-switch"><button className={locale === "zh-CN" ? "active" : ""} aria-pressed={locale === "zh-CN"} onClick={() => setLanguage("zh-CN")}>中文</button><button className={locale === "en" ? "active" : ""} aria-pressed={locale === "en"} onClick={() => setLanguage("en")}>EN</button></div>
           <a href={asset("/articles/lift-splat-shoot-explained.zh-CN.md")}>{locale === "zh-CN" ? "完整长文" : "LONG READ"}</a>
@@ -1124,19 +1148,30 @@ export default function LssExplainer() {
         </div>
       </header>
       <CurriculumRail step={step} locale={locale} onGo={go} />
-      <LessonPanel step={step} locale={locale} detail={detail} onAdvance={advanceLesson} />
-      <FrameGraph locale={locale} active={activeEdge || currentEdge} onActive={setActiveEdge} />
-      <div className="axis-key"><b>EGO FRAME</b><span>↑ +x {locale === "zh-CN" ? "前" : "forward"}</span><span>← +y {locale === "zh-CN" ? "左" : "left"}</span><span>⊙ +z {locale === "zh-CN" ? "上" : "up"}</span></div>
-      <ChapterLab {...labProps} />
+      <div className="scene-caption" aria-hidden="true">
+        <b>{String(step + 1).padStart(2, "0")}</b>
+        <span>{CHAPTERS[step].stage}</span>
+        <small>{tx(locale, actForChapter(step).short)}</small>
+      </div>
+      <div className={`course-card-layer ${cardCollapsed ? "card-collapsed" : ""}`}>
+        {cardCollapsed ? (
+          <button className={`scene-card-handle ${panelMode}`} onClick={() => setCardCollapsed(false)}>
+            <span>{String(step + 1).padStart(2, "0")} · {panelMode === "lesson" ? (locale === "zh-CN" ? "讲解" : "LEARN") : (locale === "zh-CN" ? "实验" : "LAB")}</span>
+            <b>{tx(locale, CHAPTERS[step].title)}</b>
+            <i>{locale === "zh-CN" ? "展开卡片" : "OPEN CARD"} ↗</i>
+          </button>
+        ) : panelMode === "lesson" ? <LessonPanel step={step} locale={locale} detail={detail} onAdvance={advanceLesson} onMinimize={() => setCardCollapsed(true)} /> : <ChapterLab {...labProps} />}
+      </div>
       {activeEdge && <MatrixInspector edge={activeEdge} camera={camera} rig={rig} alignment={alignment} locale={locale} onClose={() => setActiveEdge("")} />}
       {selection && <SelectionCard selection={selection} rig={rig} camera={camera} modelProbability={probability} gt={groundTruth} lidarOccupancy={lidarOccupancy} contributors={contributors} locale={locale} onClose={() => setSelection(null)} />}
       <nav className="lesson-nav">
-        <button className="round" disabled={step === 0} onClick={() => go(step - 1)} aria-label="Previous"><ChevronLeft /></button>
+        <button className="round" disabled={step === 0 && detail === 0 && panelMode === "lesson"} onClick={retreatLesson} aria-label="Previous"><ChevronLeft /></button>
         <button className="round play" onClick={() => setPlaying((value) => !value)} aria-label={playing ? "Pause" : "Play"}>{playing ? <Pause /> : <Play />}</button>
         <div className="chapter-scrub">{CHAPTERS.map((chapter, index) => <button key={chapter.title.en} className={index === step ? "active" : index < step ? "past" : ""} aria-label={tx(locale, chapter.title)} aria-current={index === step ? "step" : undefined} onClick={() => go(index)} title={tx(locale, chapter.title)}><i /></button>)}</div>
-        <button className="next-lesson" disabled={step === CHAPTERS.length - 1 && detail === 2} onClick={advanceLesson}><small>{detail < 2 ? (locale === "zh-CN" ? "下一层" : "NEXT LAYER") : (locale === "zh-CN" ? "下一章" : "NEXT CHAPTER")}</small><b>{detail < 2 ? `${detail + 2}/3` : CHAPTERS[step + 1] ? tx(locale, CHAPTERS[step + 1].title) : "END"}</b><ChevronRight /></button>
+        <div className="phase-switch" aria-label={locale === "zh-CN" ? "课程模式" : "Course mode"}><button className={panelMode === "lesson" ? "active" : ""} onClick={() => { setPanelMode("lesson"); setCardCollapsed(false); }}>{locale === "zh-CN" ? "理解" : "LEARN"}</button><button className={panelMode === "lab" ? "active" : ""} onClick={() => { setPanelMode("lab"); setCardCollapsed(false); }}>{locale === "zh-CN" ? "验证" : "LAB"}</button></div>
+        <button className="next-lesson" onClick={advanceLesson}><small>{panelMode === "lab" ? (locale === "zh-CN" ? "完成本章" : "COMPLETE") : detail < 2 ? (locale === "zh-CN" ? "下一层" : "NEXT LAYER") : (locale === "zh-CN" ? "进入实验" : "ENTER LAB")}</small><b>{panelMode === "lab" ? (CHAPTERS[step + 1] ? tx(locale, CHAPTERS[step + 1].title) : (locale === "zh-CN" ? "回到开场" : "REPLAY")) : detail < 2 ? `${detail + 2}/3` : (locale === "zh-CN" ? "亲手验证本章" : "TEST THE CLAIM")}</b><ChevronRight /></button>
       </nav>
-      <div className="interaction-hint">DRAG SCENE · SCROLL / PINCH · CLICK TO INSPECT · SPACE AUTOPLAY</div>
+      <div className="interaction-hint">DRAG · PINCH · INSPECT · SPACE AUTOPLAY</div>
     </main>
   );
 }
