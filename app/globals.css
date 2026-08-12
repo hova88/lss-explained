@@ -212,3 +212,68 @@ input[type="range"] { width: 100%; accent-color: var(--rust); }
 @media (prefers-reduced-motion: reduce) {
   *, *:before, *:after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+/* v8 · full-screen geometry lecture, aligned with the PointPillars series */
+.visual-essay { height: 100vh; min-height: 620px; overflow: hidden; }
+.persistent-stage { position: fixed; inset: 54px 0 68px; overflow: hidden; }
+.persistent-stage:before { z-index: 3; background: radial-gradient(circle at 58% 52%, transparent 0 38%,rgba(243,236,222,.12) 70%,rgba(243,236,222,.46) 100%); }
+.illustration-stage { z-index: 1; }
+.illustration-stage canvas { cursor: grab; }
+.illustration-stage canvas:active { cursor: grabbing; }
+.story-step { position: absolute; z-index: 6; top: 28px; left: 30px; width: min(400px,34vw); min-height: 0; display: block; padding: 0; background: transparent; opacity: 1; }
+.story-step:after,.step-index,.scene-handoff,.scroll-cue { display: none; }
+.act-label { margin: 0 0 15px; font: 400 17px/1.2 Newsreader,serif; letter-spacing: 0; text-transform: none; }
+.story-step h2 { max-width: 440px; margin: 0 0 12px; font-size: clamp(52px,5vw,78px); line-height: .92; }
+.scene-reveal { max-width: 390px; margin: 0 0 9px; font: 500 clamp(17px,1.55vw,22px)/1.28 Newsreader,serif; }
+.scene-question { max-width: 370px; margin: 0 0 10px; padding: 0; border: 0; color: var(--rust); font: 500 8px/1.35 DM Mono,monospace; letter-spacing: .04em; text-transform: uppercase; }
+.scene-explanation { max-width: 370px; margin: 0 0 13px; font: 400 12px/1.55 Manrope,sans-serif; }
+.scene-formula { display: inline-block; max-width: 380px; margin: 0; padding: 8px 10px 7px; background: rgba(243,236,222,.72); font-size: 8px; backdrop-filter: blur(4px); }
+.story-step footer { max-width: 380px; margin-top: 10px; padding-top: 8px; }
+.lecture-note { position: absolute; z-index: 6; right: 34px; top: 56%; width: 240px; display: grid; grid-template-columns: 25px 1fr; gap: 8px; color: var(--ink); transform: rotate(-2deg); font: 600 17px/1.25 Caveat,cursive; }
+.lecture-note b { color: var(--rust); font-weight: 600; }
+.lecture-note:before { content:""; position:absolute; left:-84px; top:-29px; width:72px; height:37px; border-top:2px solid #7948a0; border-radius:50%; transform:rotate(-14deg); }
+.lecture-note:after { content:"↗"; position:absolute; left:-86px; top:-34px; color:#7948a0; font-size:20px; transform:rotate(-20deg); }
+.gesture-note { position:absolute; z-index:6; left:50%; bottom:9px; transform:translateX(-50%); color:var(--muted); font:600 14px/1 Caveat,cursive; white-space:nowrap; }
+.lab-toggle { position:absolute; z-index:7; right:30px; bottom:20px; border:1px solid var(--ink); padding:8px 11px; background:rgba(251,246,235,.86); cursor:pointer; font:500 7px/1 DM Mono,monospace; letter-spacing:.08em; text-transform:uppercase; }
+.lab-toggle:hover { background:var(--ink); color:var(--paper); }
+.sketch-note.note-a { top:10%; right:8%; }
+.sketch-note.note-b { left:48%; bottom:11%; }
+.stage-stamp,.stage-caption { display:none; }
+.lesson-timeline { position:fixed; z-index:50; inset:auto 0 0; height:68px; display:grid; grid-template-columns:40px 44px 1fr 40px; align-items:center; gap:7px; padding:0 28px; border-top:1px solid var(--line); background:rgba(243,236,222,.96); }
+.lesson-timeline>button { display:grid; place-items:center; border:0; background:transparent; cursor:pointer; }
+.lesson-timeline>button:disabled { opacity:.2; cursor:default; }
+.lesson-timeline svg { width:17px; height:17px; }
+.play-control { width:36px;height:36px;border:1px solid var(--ink)!important;border-radius:50%!important; }
+.lesson-timeline>div { display:grid; grid-template-columns:repeat(12,1fr); align-items:start; height:48px; }
+.lesson-timeline>div button { position:relative; height:48px; border:0; border-top:1px solid rgba(35,39,36,.35); padding:0; background:transparent; cursor:pointer; }
+.lesson-timeline>div button i { position:absolute; top:-4px; left:50%; width:7px;height:7px;border:1px solid var(--ink);border-radius:50%;background:var(--paper); transform:translateX(-50%); }
+.lesson-timeline>div button span { position:absolute; top:13px; left:50%; width:98px; opacity:0; transform:translateX(-50%); font:600 11px/1 Caveat,cursive; pointer-events:none; }
+.lesson-timeline>div button.active { border-color:var(--rust); }
+.lesson-timeline>div button.active i { width:12px;height:12px;top:-6px;background:#9bbdcb;border-color:var(--blue); }
+.lesson-timeline>div button.active span { opacity:1; }
+.evidence-drawer { position:fixed; z-index:45; top:54px; bottom:68px; left:0; width:min(560px,47vw); overflow:auto; background:rgba(251,246,235,.985); box-shadow:16px 0 50px rgba(35,39,36,.12); animation:drawerIn .35s both; }
+.evidence-drawer .lab-break { width:100%; min-height:100%; padding:38px 30px; border:0; box-shadow:none; }
+.evidence-drawer .lab-heading h2 { font-size:38px; }
+
+@media (max-width: 820px) {
+  .visual-essay { min-height:600px; }
+  .persistent-stage { top:48px; bottom:58px; height:auto; }
+  .story-step { top:18px; left:20px; width:calc(100% - 40px); }
+  .story-step h2 { max-width:330px; font-size:46px; }
+  .scene-reveal { max-width:310px; font-size:17px; }
+  .scene-explanation { max-width:300px; font-size:10.5px; line-height:1.48; }
+  .scene-formula { max-width:300px; font-size:7px; }
+  .story-step footer { display:none; }
+  .lecture-note { right:15px; top:auto; bottom:67px; width:180px; font-size:14px; }
+  .gesture-note { bottom:8px; font-size:11px; }
+  .lab-toggle { right:12px; bottom:28px; padding:6px 8px; }
+  .lesson-timeline { height:58px; grid-template-columns:29px 34px 1fr 29px; gap:3px; padding:0 7px; }
+  .play-control { width:31px;height:31px; }
+  .lesson-timeline>div { height:38px; }
+  .lesson-timeline>div button { height:38px; }
+  .lesson-timeline>div button span { display:none; }
+  .evidence-drawer { top:48px; bottom:58px; width:100%; }
+  .evidence-drawer .lab-break { padding:28px 16px; }
+  .sketch-note.note-a { top:48%; right:5%; }
+  .sketch-note.note-b { left:6%; bottom:14%; }
+}

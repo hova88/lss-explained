@@ -4,7 +4,7 @@ An English-only, source-audited visual essay about the original ECCV 2020 **Lift
 
 **Live:** https://hova88.github.io/lss-explained/
 
-This is the camera-to-BEV companion to [pointpillars-explained](https://github.com/hova88/pointpillars-explained). Version 7 is one concise lecture in one spatial-ink language: each scene asks one question, delivers one takeaway and adds only the next necessary mechanism. The former modeled-3D layer has been removed. Deterministic, interactive hand-drawn geometry now carries the whole course. The pinned 34,688-point LiDAR scan is reference evidence only and is never passed into LSS inference.
+This is the camera-to-BEV companion to [pointpillars-explained](https://github.com/hova88/pointpillars-explained). Version 8 adopts the same full-screen geometry-lab rhythm: one scene, one spatial change and one short explanation at a time. A rotatable and zoomable spatial-ink stage carries the entire course, with true volumetric frustums, depth rays, coordinate frames, pillars, BEV layers, reference LiDAR and trajectories drawn in one language. The pinned 34,688-point LiDAR scan is reference evidence only and is never passed into LSS inference.
 
 ## Course path
 
@@ -50,9 +50,9 @@ pnpm build:pages
 ## Interaction
 
 - Scroll through twelve progressively dependent scenes; each states what enters, what changes and what leaves.
-- Every scene uses the same spatial hand-drawn system; click cameras and ray depths directly on the whiteboard.
+- Every scene uses the same full-screen spatial hand-drawn system; drag to rotate, scroll to zoom, and click cameras or ray depths directly.
 - Use the three short pause sections for geometry, BEV truth and robustness/trajectory experiments.
-- Arrow keys move between scenes; Escape closes the contents drawer.
+- The bottom timeline, arrow keys and autoplay move between scenes; Escape closes the contents drawer.
 - The UI honors `prefers-reduced-motion`.
 
 ## Sources

@@ -1,8 +1,8 @@
 "use client";
 /* eslint-disable @next/next/no-img-element */
 
-import { ChevronDown, Menu, X } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ChevronLeft, ChevronRight, Menu, Pause, Play, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { binaryStats, boltzmannProbabilities, float16LittleEndianToFloat32, nearestFeatureAnchor, trajectoryCost } from "../lib/algorithm.mjs";
 import { IllustrationStage } from "./IllustrationStage";
 import { SCENES, sceneIndexFromHash, type LabId } from "./lss-content";
@@ -35,21 +35,17 @@ function decodeUint8(encoded?:EncodedArray){const bytes=decodeBytes(encoded);ret
 
 function EvidenceTag({ value }:{value:string}) { return <span className={`evidence-tag evidence-${value.toLowerCase().replaceAll(" ","-")}`}>{value}</span>; }
 
-function StoryStep({ index, active, setRef }:{index:number;active:boolean;setRef:(element:HTMLElement|null)=>void}) {
+function StoryStep({ index }:{index:number}) {
   const scene=SCENES[index];
   return (
-    <article ref={setRef} id={scene.id} className={`story-step ${active?"active":""}`} data-scene={index}>
-      <div className="step-index"><span>{String(index+1).padStart(2,"0")}</span><i /></div>
+    <article id={scene.id} className="story-step active" data-scene={index}>
       <p className="act-label">{scene.act}</p>
       <h2>{scene.title}</h2>
-      <p className="scene-question">{scene.question}</p>
       <p className="scene-reveal">{scene.reveal}</p>
+      <p className="scene-question">{scene.question}</p>
       <p className="scene-explanation">{scene.explanation}</p>
-      <ol>{scene.steps.map((step,stepIndex)=><li key={step.label}><i>{stepIndex+1}</i><span><b>{step.label}</b>{step.text}</span></li>)}</ol>
       <code className="scene-formula">{scene.formula}</code>
       <footer><EvidenceTag value={scene.evidence} /><span>{scene.source}</span></footer>
-      <p className="scene-handoff">{scene.handoff}</p>
-      {index<SCENES.length-1&&<div className="scroll-cue">keep tracing <ChevronDown /></div>}
     </article>
   );
 }
@@ -102,28 +98,21 @@ function RobustnessLab({ rig,selectedCamera,setSelectedCamera,enabled,setEnabled
 }
 
 export default function LssExplainer() {
-  const [activeScene,setActiveScene]=useState(0),[progress,setProgress]=useState(0),[contentsOpen,setContentsOpen]=useState(false);
+  const [activeScene,setActiveScene]=useState(0),[progress,setProgress]=useState(1),[contentsOpen,setContentsOpen]=useState(false),[playing,setPlaying]=useState(false),[labOpen,setLabOpen]=useState(false);
   const [rig,setRig]=useState<Rig|null>(null),[features,setFeatures]=useState<Features|null>(null),[model,setModel]=useState<Model|null>(null);
   const [selectedCamera,setSelectedCamera]=useState(1),[depthIndex,setDepthIndex]=useState(15);
   const [bevMode,setBevMode]=useState<BevMode>("probability"),[threshold,setThreshold]=useState(.5),[bevOpacity,setBevOpacity]=useState(.82),[rawGrid,setRawGrid]=useState(false);
   const [enabled,setEnabled]=useState<boolean[]>(Array(6).fill(true)),[yaw,setYaw]=useState(0),[temperature,setTemperature]=useState(.8),[selectedTrajectory,setSelectedTrajectory]=useState(0);
-  const stepRefs=useRef<(HTMLElement|null)[]>([]);
 
   useEffect(()=>{Promise.all([
     fetch(asset("/data/rig.json")).then((response)=>response.json()),fetch(asset("/data/model-features.json")).then((response)=>response.json()),fetch(asset("/data/model-artifacts.json")).then((response)=>response.json())
   ]).then(([rigData,featuresData,modelData])=>{setRig(rigData);setFeatures(featuresData);setModel(modelData);}).catch((error)=>console.error("Evidence assets failed",error));},[]);
 
-  useEffect(()=>{
-    const initial=sceneIndexFromHash(location.hash);
-    const observer=new IntersectionObserver((entries)=>{const visible=entries.filter((entry)=>entry.isIntersecting).sort((a,b)=>b.intersectionRatio-a.intersectionRatio)[0];if(!visible)return;const index=Number((visible.target as HTMLElement).dataset.scene);setActiveScene(index);history.replaceState(null,"",`#${SCENES[index].id}`);}, {rootMargin:"-25% 0px -50% 0px",threshold:[.05,.2,.45,.7]});
-    const frame=requestAnimationFrame(()=>{setActiveScene(initial);stepRefs.current[initial]?.scrollIntoView({block:"center"});stepRefs.current.forEach((element)=>element&&observer.observe(element));});
-    return()=>{cancelAnimationFrame(frame);observer.disconnect();};
-  },[]);
+  useEffect(()=>{const frame=requestAnimationFrame(()=>setActiveScene(sceneIndexFromHash(location.hash)));return()=>cancelAnimationFrame(frame);},[]);
 
-  useEffect(()=>{let frame=0;const update=()=>{frame=0;const element=stepRefs.current[activeScene];if(!element)return;const rect=element.getBoundingClientRect(),range=Math.max(1,rect.height+innerHeight*.35);setProgress(Math.max(0,Math.min(1,(innerHeight*.55-rect.top)/range)));};const handler=()=>{if(!frame)frame=requestAnimationFrame(update);};addEventListener("scroll",handler,{passive:true});update();return()=>{removeEventListener("scroll",handler);if(frame)cancelAnimationFrame(frame);};},[activeScene]);
-
-  const go=useCallback((index:number)=>{stepRefs.current[Math.max(0,Math.min(SCENES.length-1,index))]?.scrollIntoView({behavior:matchMedia("(prefers-reduced-motion: reduce)").matches?"auto":"smooth",block:"center"});setContentsOpen(false);},[]);
+  const go=useCallback((index:number)=>{const next=Math.max(0,Math.min(SCENES.length-1,index));setActiveScene(next);setProgress(0);setLabOpen(false);setContentsOpen(false);history.replaceState(null,"",`#${SCENES[next].id}`);requestAnimationFrame(()=>setProgress(1));},[]);
   useEffect(()=>{const handler=(event:KeyboardEvent)=>{if(event.key==="Escape")setContentsOpen(false);if(event.key==="ArrowDown"||event.key==="ArrowRight"){event.preventDefault();go(activeScene+1);}if(event.key==="ArrowUp"||event.key==="ArrowLeft"){event.preventDefault();go(activeScene-1);}};addEventListener("keydown",handler);return()=>removeEventListener("keydown",handler);},[activeScene,go]);
+  useEffect(()=>{if(!playing)return;const timer=setInterval(()=>setActiveScene(current=>{const next=(current+1)%SCENES.length;history.replaceState(null,"",`#${SCENES[next].id}`);setProgress(0);requestAnimationFrame(()=>setProgress(1));return next;}),6500);return()=>clearInterval(timer);},[playing]);
 
   const allDepth=useMemo(()=>decodeFloat(features?.depth_probabilities),[features]);
   const depth=useMemo(()=>Array.from({length:41},(_,d)=>allDepth?.[selectedCamera*41*8*22+d*8*22+4*22+11]??0),[allDepth,selectedCamera]);
@@ -136,23 +125,20 @@ export default function LssExplainer() {
   const trajectories=useMemo<Trajectory[]>(()=>{const paths=Array.from({length:9},(_,index)=>Array.from({length:21},(_,sample)=>{const y=sample*.72;return[(index-4)*.017*y*y,y] as [number,number];}));const map=([x,y]:[number,number])=>.055*Math.abs(x)+.85*Math.exp(-((x-2.3)**2+(y-9)**2)/5)+.5*Math.exp(-((x+1.4)**2+(y-13)**2)/3),costs=paths.map((path)=>trajectoryCost(path,map,.14)),probabilities=boltzmannProbabilities(costs,temperature);return costs.map((cost,index)=>({name:index===costs.indexOf(Math.min(...costs))?"minimum cost":`template ${index+1}`,points:paths[index],cost,probability:probabilities[index]})).sort((a,b)=>a.cost-b.cost);},[temperature]);
   const scene=SCENES[activeScene];
 
-  return <main className={`visual-essay scene-${activeScene}`}>
-    <header className="essay-header"><a href={asset("/")}><span>LSS</span><b>EXPLAINED</b><sup>v7</sup></a><div><button onClick={()=>setContentsOpen(!contentsOpen)} aria-expanded={contentsOpen}><Menu />Contents</button><a href={asset("/articles/lift-splat-shoot-source-notes.md")}>Source notes</a><a href="https://github.com/hova88/lss-explained">GitHub ↗</a></div></header>
-    <div className="reading-progress" style={{"--progress":`${((activeScene+progress)/SCENES.length)*100}%`} as React.CSSProperties}><i /></div>
+  const activeLab=scene.lab==="geometry"?<GeometryLab rig={rig} selectedCamera={selectedCamera} setSelectedCamera={setSelectedCamera} depth={depth} depthIndex={depthIndex} setDepthIndex={setDepthIndex} />:scene.lab==="bev"?<BevLab rig={rig} selectedCamera={selectedCamera} setSelectedCamera={setSelectedCamera} bevMode={bevMode} setBevMode={setBevMode} threshold={threshold} setThreshold={setThreshold} opacity={bevOpacity} setOpacity={setBevOpacity} rawGrid={rawGrid} setRawGrid={setRawGrid} stats={stats} activeVariant={activeVariant} />:scene.lab==="robustness"?<RobustnessLab rig={rig} selectedCamera={selectedCamera} setSelectedCamera={setSelectedCamera} enabled={enabled} setEnabled={setEnabled} yaw={yaw} setYaw={setYaw} trajectories={trajectories} selectedTrajectory={selectedTrajectory} setSelectedTrajectory={setSelectedTrajectory} temperature={temperature} setTemperature={setTemperature} />:null;
+
+  return <main className={`visual-essay scene-${activeScene} ${labOpen?"lab-open":""}`}>
+    <header className="essay-header"><a href={asset("/")}><span>LSS</span><b>EXPLAINED</b><sup>v8</sup></a><div><button onClick={()=>setContentsOpen(!contentsOpen)} aria-expanded={contentsOpen}><Menu />Contents</button><a href={asset("/articles/lift-splat-shoot-source-notes.md")}>Source notes</a><a href="https://github.com/hova88/lss-explained">GitHub ↗</a></div></header>
     {contentsOpen&&<nav className="contents-drawer" aria-label="Table of contents"><button className="drawer-close" onClick={()=>setContentsOpen(false)}><X /></button><p>FIELD INDEX · 12 SCENES</p>{SCENES.map((item,index)=><button key={item.id} className={index===activeScene?"active":""} onClick={()=>go(index)}><span>{String(index+1).padStart(2,"0")}</span><b>{item.title}</b><small>{item.act}</small></button>)}</nav>}
 
     <section className="persistent-stage" aria-live="polite">
       <IllustrationStage scene={scene} progress={progress} selectedCamera={selectedCamera} depthIndex={depthIndex} onCameraSelect={setSelectedCamera} onDepthSelect={setDepthIndex} />
-      <div className="stage-caption"><span>{String(activeScene+1).padStart(2,"0")} / {SCENES.length}</span><b>{scene.title}</b><small>interactive spatial ink</small></div>
+      <StoryStep index={activeScene} />
+      <aside className="lecture-note"><b>{String(activeScene+1).padStart(2,"0")}.</b><span>{scene.steps[activeScene%3].text}</span></aside>
+      <div className="gesture-note">DRAG TO ROTATE · SCROLL TO ZOOM · CLICK CAMERA OR DEPTH</div>
+      {scene.lab&&<button className="lab-toggle" onClick={()=>setLabOpen(!labOpen)}>{labOpen?"Close evidence":"Open evidence"}</button>}
     </section>
-
-    <div className="story-column">
-      {SCENES.map((_,index)=><div key={SCENES[index].id}><StoryStep index={index} active={index===activeScene} setRef={(element)=>{stepRefs.current[index]=element;}} />
-        {index===7&&<GeometryLab rig={rig} selectedCamera={selectedCamera} setSelectedCamera={setSelectedCamera} depth={depth} depthIndex={depthIndex} setDepthIndex={setDepthIndex} />}
-        {index===10&&<BevLab rig={rig} selectedCamera={selectedCamera} setSelectedCamera={setSelectedCamera} bevMode={bevMode} setBevMode={setBevMode} threshold={threshold} setThreshold={setThreshold} opacity={bevOpacity} setOpacity={setBevOpacity} rawGrid={rawGrid} setRawGrid={setRawGrid} stats={stats} activeVariant={activeVariant} />}
-        {index===11&&<RobustnessLab rig={rig} selectedCamera={selectedCamera} setSelectedCamera={setSelectedCamera} enabled={enabled} setEnabled={setEnabled} yaw={yaw} setYaw={setYaw} trajectories={trajectories} selectedTrajectory={selectedTrajectory} setSelectedTrajectory={setSelectedTrajectory} temperature={temperature} setTemperature={setTemperature} />}
-      </div>)}
-      <footer className="essay-footer"><p>Lift uncertain evidence. Splat it into shared metric space.</p><div><EvidenceTag value="PAPER" /><EvidenceTag value="OFFICIAL CODE" /><EvidenceTag value="CHECKPOINT" /><EvidenceTag value="REAL SAMPLE" /></div><a href="#system-view" onClick={(event)=>{event.preventDefault();go(0);}}>Trace it again ↑</a></footer>
-    </div>
+    {labOpen&&activeLab&&<div className="evidence-drawer">{activeLab}</div>}
+    <nav className="lesson-timeline" aria-label="Lesson progress"><button onClick={()=>go(activeScene-1)} disabled={activeScene===0}><ChevronLeft /></button><button className="play-control" onClick={()=>setPlaying(!playing)} aria-label={playing?"Pause":"Play"}>{playing?<Pause />:<Play />}</button><div>{SCENES.map((item,index)=><button key={item.id} className={index===activeScene?"active":""} onClick={()=>go(index)} aria-label={`Scene ${index+1}: ${item.title}`}><i /><span>{item.title}</span></button>)}</div><button onClick={()=>go(activeScene+1)} disabled={activeScene===SCENES.length-1}><ChevronRight /></button></nav>
   </main>;
 }

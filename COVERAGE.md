@@ -1,6 +1,6 @@
 # Coverage contract
 
-The v7 course maps the original LSS paper, pinned official implementation and one fixed nuScenes sample to twelve concise scenes and three short practice pauses. One interactive spatial-ink renderer carries the entire visual explanation; the previous modeled-WebGL layer has been removed.
+The v8 course maps the original LSS paper, pinned official implementation and one fixed nuScenes sample to twelve full-screen geometry scenes and three evidence drawers. One rotatable, zoomable spatial-ink renderer carries the entire explanation; each scene changes one spatial fact while preserving the shared coordinate world.
 
 | # | Narrative scene | Paper / implementation coverage | Evidence |
 |---:|---|---|---|
