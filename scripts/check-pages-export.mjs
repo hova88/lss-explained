@@ -10,4 +10,4 @@ const required=[
 ];
 for(const relative of required){const info=await stat(join(out,relative));if(!info.isFile()||info.size===0)throw new Error(`Missing exported Pages asset: ${relative}`)}
 if(/locale|zh-CN|[\u3400-\u9fff]/u.test(html))throw new Error("Static HTML still contains the removed bilingual interface");
-console.log("verified static export under /lss-explained with the English visual essay, three labs, LiDAR, source notes, and model rasters");
+console.log("verified static export under /lss-explained with the concise spatial-ink lecture, three pauses, LiDAR, source notes, and model rasters");
