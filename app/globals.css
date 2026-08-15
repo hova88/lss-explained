@@ -213,7 +213,7 @@ input[type="range"] { width: 100%; accent-color: var(--rust); }
   *, *:before, *:after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
 
-/* v8 · full-screen geometry lecture, aligned with the PointPillars series */
+/* v9 · tensor-first full-screen spatial lecture */
 .visual-essay { height: 100vh; min-height: 620px; overflow: hidden; }
 .persistent-stage { position: fixed; inset: 54px 0 68px; overflow: hidden; }
 .persistent-stage:before { z-index: 3; background: radial-gradient(circle at 58% 52%, transparent 0 38%,rgba(243,236,222,.12) 70%,rgba(243,236,222,.46) 100%); }
@@ -233,7 +233,14 @@ input[type="range"] { width: 100%; accent-color: var(--rust); }
 .lecture-note b { color: var(--rust); font-weight: 600; }
 .lecture-note:before { content:""; position:absolute; left:-84px; top:-29px; width:72px; height:37px; border-top:2px solid #7948a0; border-radius:50%; transform:rotate(-14deg); }
 .lecture-note:after { content:"↗"; position:absolute; left:-86px; top:-34px; color:#7948a0; font-size:20px; transform:rotate(-20deg); }
-.gesture-note { position:absolute; z-index:6; left:50%; bottom:9px; transform:translateX(-50%); color:var(--muted); font:600 14px/1 Caveat,cursive; white-space:nowrap; }
+.gesture-note { position:absolute; z-index:6; right:28px; top:12px; color:var(--muted); font:600 11px/1 Caveat,cursive; white-space:nowrap; }
+.tensor-ledger { position:absolute; z-index:7; left:31%; right:19%; bottom:12px; display:grid; grid-template-columns:minmax(120px,1fr) minmax(180px,1.3fr) minmax(120px,1fr); align-items:stretch; background:rgba(251,246,235,.88); box-shadow:0 0 0 1px rgba(35,39,36,.18); backdrop-filter:blur(6px); }
+.tensor-ledger code { display:grid; place-items:center; min-width:0; padding:10px 9px; color:var(--blue); font:500 8px/1.35 DM Mono,monospace; text-align:center; overflow-wrap:anywhere; }
+.tensor-ledger>span { position:relative; display:grid; place-items:center; align-content:center; gap:3px; padding:7px 22px; border-inline:1px solid var(--line); color:var(--rust); text-align:center; }
+.tensor-ledger>span:before,.tensor-ledger>span:after { content:"→"; position:absolute; top:50%; color:var(--rust); font:500 13px/1 DM Mono,monospace; transform:translateY(-50%); }
+.tensor-ledger>span:before { left:5px; }.tensor-ledger>span:after { right:5px; }
+.tensor-ledger b { font:500 7px/1.3 DM Mono,monospace; letter-spacing:.05em; text-transform:uppercase; }
+.tensor-ledger small { color:var(--muted); font:600 11px/1 Caveat,cursive; }
 .lab-toggle { position:absolute; z-index:7; right:30px; bottom:20px; border:1px solid var(--ink); padding:8px 11px; background:rgba(251,246,235,.86); cursor:pointer; font:500 7px/1 DM Mono,monospace; letter-spacing:.08em; text-transform:uppercase; }
 .lab-toggle:hover { background:var(--ink); color:var(--paper); }
 .sketch-note.note-a { top:10%; right:8%; }
@@ -265,7 +272,12 @@ input[type="range"] { width: 100%; accent-color: var(--rust); }
   .scene-formula { max-width:300px; font-size:7px; }
   .story-step footer { display:none; }
   .lecture-note { right:15px; top:auto; bottom:67px; width:180px; font-size:14px; }
-  .gesture-note { bottom:8px; font-size:11px; }
+  .gesture-note { display:none; }
+  .tensor-ledger { left:12px; right:12px; bottom:8px; grid-template-columns:1fr 1.15fr 1fr; }
+  .tensor-ledger code { padding:7px 5px; font-size:6px; }
+  .tensor-ledger>span { padding:6px 13px; }
+  .tensor-ledger b { font-size:5.5px; }
+  .tensor-ledger small { display:none; }
   .lab-toggle { right:12px; bottom:28px; padding:6px 8px; }
   .lesson-timeline { height:58px; grid-template-columns:29px 34px 1fr 29px; gap:3px; padding:0 7px; }
   .play-control { width:31px;height:31px; }

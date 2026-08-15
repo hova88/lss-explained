@@ -33,6 +33,8 @@ function sceneSeed(id: string) {
   return [...id].reduce((value, char) => (value * 31 + char.charCodeAt(0)) >>> 0, 2166136261);
 }
 
+function indexSeed(row:number,column:number){return (row*11+column*7+row*column)%9;}
+
 function roughLine(ctx: CanvasRenderingContext2D, random: () => number, x1: number, y1: number, x2: number, y2: number, color = palette.ink, width = 1.35, alpha = 0.78) {
   ctx.save();
   ctx.strokeStyle = color;
@@ -179,12 +181,6 @@ function drawScene(ctx: CanvasRenderingContext2D, width: number, height: number,
     const carTop=iso([0,0,3.4],cx+45,baseY,s),bevBottom=iso([0,0,.08],cx+45,baseY-185,s*.65);arrow(ctx,random,carTop[0],carTop[1],bevBottom[0],bevBottom[1],palette.rust);
     inkLabel(ctx,"six calibrated frustums",cx+215,baseY-18,palette.blue);
     inkLabel(ctx,"shared ego BEV",bev[2][0]+8,bev[2][1]-4,palette.sage);
-  } else if (scene.illustration === "sample") {
-    const s=Math.min(width,height)/18,baseY=cy+145;drawIsoGrid(ctx,random,cx+30,baseY,s,7);drawIsoCar(ctx,random,cx+30,baseY,s*.65);
-    const planes:{x:number;z:number;color:string}[]=[{x:-5,z:3.8,color:palette.blue},{x:-1.7,z:4.8,color:palette.ochre},{x:1.8,z:3.9,color:palette.rust},{x:5,z:4.8,color:palette.sage}];
-    planes.forEach((item,index)=>{const plane=[[item.x,-1.5,item.z],[item.x,1.5,item.z],[item.x,1.5,item.z+2.1],[item.x,-1.5,item.z+2.1]].map(point=>iso(point as Point3,cx+30,baseY,s));roughPolygon(ctx,random,plane,item.color,item.color,.1);const ground=iso([item.x,0,.1],cx+30,baseY,s),center=iso([item.x,0,item.z],cx+30,baseY,s);roughLine(ctx,random,center[0],center[1],ground[0],ground[1],item.color,.8,.28);if(index===0)for(let dotIndex=0;dotIndex<6;dotIndex+=1)dot(ctx,plane[0][0]+18+dotIndex*7,plane[0][1]-10-dotIndex*2,1.5,palette.blue,.55);});
-    for(let index=0;index<90;index+=1){const p=iso([-6+random()*12,-5+random()*10,.15+random()*1.3],cx+30,baseY,s);dot(ctx,p[0],p[1],.7+random()*.8,palette.sage,.34);}
-    inkLabel(ctx,"images",cx-200,cy-115,palette.blue);inkLabel(ctx,"calibration",cx-30,cy-165,palette.ochre);inkLabel(ctx,"GT target",cx+140,cy-115,palette.rust);inkLabel(ctx,"LiDAR · audit only",cx+250,cy+115,palette.sage);
   } else if (scene.illustration === "rig") {
     const s=Math.min(width,height)/18,baseY=cy+90;drawIsoGrid(ctx,random,cx,baseY,s,7);drawIsoCar(ctx,random,cx,baseY,s);
     for(let index=0;index<6;index+=1){const angle=Math.PI/2-index*Math.PI/3,origin:Point3=[Math.cos(angle)*1.25,Math.sin(angle)*1.25,.85],o=drawFrustum3D(ctx,random,origin,angle,cx,baseY,s,index===camera);hits.push({kind:"camera",index,x:o[0],y:o[1],radius:24});}
@@ -196,6 +192,20 @@ function drawScene(ctx: CanvasRenderingContext2D, width: number, height: number,
     for(let col=1;col<11;col+=1){const t=col/11,a:[number,number]=[feature[0][0]+(feature[1][0]-feature[0][0])*t,feature[0][1]+(feature[1][1]-feature[0][1])*t],b:[number,number]=[feature[3][0]+(feature[2][0]-feature[3][0])*t,feature[3][1]+(feature[2][1]-feature[3][1])*t];roughLine(ctx,random,a[0],a[1],b[0],b[1],palette.blue,.45,.22);}
     arrow(ctx,random,image[1][0]+22,image[1][1]-8,feature[0][0]-25,feature[0][1]+4,palette.rust);
     inkLabel(ctx,"352 × 128 image",image[3][0]-4,image[3][1]-12,palette.blue,"center");inkLabel(ctx,"8 × 22 anchors",feature[2][0]+12,feature[2][1],palette.ochre);
+  } else if (scene.illustration === "depth") {
+    const s=Math.min(width,height)/18,baseY=cy+125;drawIsoGrid(ctx,random,cx,baseY,s,7);const origin:Point3=[-4,-2,2],end:Point3=[5.8,3,.4],o=iso(origin,cx,baseY,s),e=iso(end,cx,baseY,s);drawSpatialCamera(ctx,random,o,e,true);
+    const sheets:Point2[][]=[];
+    for(let index=0;index<9;index+=1){const t=.18+index*.075,z=.15+index*.03,center:[number,number,number]=[origin[0]+(end[0]-origin[0])*t,origin[1]+(end[1]-origin[1])*t,origin[2]+(end[2]-origin[2])*t],plane=[[-.62,-.42,0],[.62,-.42,0],[.62,.42,0],[-.62,.42,0]].map(([dx,dy,dz])=>iso([center[0]+dx,center[1]+dy,center[2]+dz+z],cx,baseY,s));sheets.push(plane);roughPolygon(ctx,random,plane,index===5?palette.rust:palette.blue,index===5?palette.rust:palette.blue,index===5?.12:.025);}
+    roughLine(ctx,random,o[0],o[1],e[0],e[1],palette.rust,1.4,.7);
+    for(let index=0;index<41;index+=1){const t=(index+1)/42,x=o[0]+(e[0]-o[0])*t,y=o[1]+(e[1]-o[1])*t,weight=Math.exp(-1*((index-depth)/6)**2);dot(ctx,x,y,1.5+weight*5,index===depth?palette.rust:palette.blue,.28+weight*.45);hits.push({kind:"depth",index,x,y,radius:9});}
+    inkLabel(ctx,"41 depth sheets",sheets[8][2][0]+8,sheets[8][2][1],palette.blue);inkLabel(ctx,"Σ α(d) = 1",cx+150,cy-125,palette.rust);
+  } else if (scene.illustration === "context") {
+    const s=Math.min(width,height)/18,baseY=cy+130;drawIsoGrid(ctx,random,cx,baseY,s,7);const anchor=iso([-2,-1,2.4],cx,baseY,s),split=iso([1,1,3.4],cx,baseY,s);dot(ctx,anchor[0],anchor[1],7,palette.ochre,.8);arrow(ctx,random,anchor[0]+8,anchor[1]-5,split[0]-8,split[1]+3,palette.rust);
+    const depthPlane=[[-.5,-2.3,3],[.5,-2.3,3],[.5,2.3,3],[-.5,2.3,3]].map(point=>iso(point as Point3,cx+150,baseY,s));roughPolygon(ctx,random,depthPlane,palette.rust,palette.rust,.07);
+    for(let index=0;index<41;index+=1){const t=index/40,x=depthPlane[0][0]+(depthPlane[1][0]-depthPlane[0][0])*t,y=depthPlane[0][1]+(depthPlane[1][1]-depthPlane[0][1])*t;dot(ctx,x,y-8-Math.exp(-1*((index-depth)/6)**2)*38,1.7,index===depth?palette.rust:palette.ochre,.65);}
+    const contextPlane=[[2,-2.8,1],[2,2.8,1],[2,2.8,4.5],[2,-2.8,4.5]].map(point=>iso(point as Point3,cx-20,baseY,s));roughPolygon(ctx,random,contextPlane,palette.blue,palette.blue,.07);
+    for(let row=0;row<8;row+=1)for(let col=0;col<8;col+=1){const u=(col+.5)/8,v=(row+.5)/8,x=contextPlane[0][0]+(contextPlane[1][0]-contextPlane[0][0])*u+(contextPlane[3][0]-contextPlane[0][0])*v,y=contextPlane[0][1]+(contextPlane[1][1]-contextPlane[0][1])*u+(contextPlane[3][1]-contextPlane[0][1])*v;dot(ctx,x,y,1.2+(indexSeed(row,col)%3),palette.blue,.28+.05*(indexSeed(row,col)%4));}
+    inkLabel(ctx,"WHERE · 41",depthPlane[2][0]+10,depthPlane[2][1],palette.rust);inkLabel(ctx,"WHAT · 64",contextPlane[3][0]-8,contextPlane[3][1]-8,palette.blue,"right");
   } else if (scene.illustration === "ray" || scene.illustration === "lift") {
     const s=Math.min(width,height)/18,baseY=cy+115;drawIsoGrid(ctx,random,cx,baseY,s,7);const origin=iso([-4,-2,1.8],cx,baseY,s),end=iso([6,3,.5],cx,baseY,s);
     drawSpatialCamera(ctx,random,origin,end,true);roughLine(ctx,random,origin[0],origin[1],end[0],end[1],palette.rust,1.6,.8);

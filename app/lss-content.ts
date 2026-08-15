@@ -1,198 +1,148 @@
 export type Evidence = "PAPER" | "OFFICIAL CODE" | "REAL SAMPLE" | "CHECKPOINT" | "TEACHING";
-export type IllustrationKind = "overview" | "sample" | "rig" | "features" | "ray" | "lift" | "geometry" | "splat" | "learning" | "truth" | "shoot";
+export type IllustrationKind = "overview" | "features" | "ray" | "depth" | "context" | "lift" | "geometry" | "rig" | "splat" | "learning" | "truth" | "shoot";
 export type LabId = "geometry" | "bev" | "robustness";
-
-export type NarrativeStep = { label: string; text: string };
+export type NarrativeStep = { label:string; text:string };
+export type TensorTransition = { input:string; operation:string; output:string; detail:string };
 
 export type NarrativeScene = {
-  id: string;
-  act: string;
-  title: string;
-  question: string;
-  reveal: string;
-  explanation: string;
-  steps: [NarrativeStep, NarrativeStep, NarrativeStep];
-  formula: string;
-  handoff: string;
-  evidence: Evidence;
-  source: string;
-  illustration: IllustrationKind;
-  lab?: LabId;
+  id:string; act:string; title:string; question:string; reveal:string; explanation:string;
+  steps:[NarrativeStep,NarrativeStep,NarrativeStep]; tensor:TensorTransition; formula:string; handoff:string;
+  evidence:Evidence; source:string; illustration:IllustrationKind; lab?:LabId;
 };
 
-export const SCENES: NarrativeScene[] = [
+export const SCENES:NarrativeScene[] = [
   {
-    id: "system-view", act: "I · THE JOB", title: "See the whole machine first",
-    question: "What does LSS turn into what?",
-    reveal: "Six calibrated camera views become one metric map around the ego vehicle.",
-    explanation: "Camera images describe appearance in perspective. Driving decisions need shared ground coordinates. LSS bridges that gap with an explicit pipeline: Lift image evidence into possible 3D locations, Splat it into a BEV grid, then reason on that grid.",
-    steps: [
-      { label: "INPUT", text: "RGB images plus each camera’s intrinsics and camera→ego pose." },
-      { label: "TRANSFORM", text: "Image features → depth candidates → ego-space pillars." },
-      { label: "OUTPUT", text: "One vehicle logit for every 0.5 m BEV cell." }
-    ],
-    formula: "{images, K, R, t} → LIFT → SPLAT → BEV logits [B,1,200,200]",
-    handoff: "Hold onto one idea: LSS creates a common metric workspace.",
-    evidence: "PAPER", source: "Paper Fig. 1, Fig. 4 · official forward()", illustration: "overview"
+    id:"system-view",act:"I · THE ONE QUESTION",title:"How do six images become one BEV?",
+    question:"What is the single problem LSS must solve?",
+    reveal:"Give every 2D image feature a plausible depth, place it in shared ego 3D, then collapse it into BEV.",
+    explanation:"An image says what a pixel looks like, but not where it lies in meters. LSS keeps that missing depth explicit. Lift creates depth-weighted 3D candidates; geometry moves them into the vehicle frame; Splat groups them on the ground plane.",
+    steps:[{label:"ADD DEPTH",text:"Turn each feature pixel into several weighted positions on its camera ray."},{label:"SHARE SPACE",text:"Use calibration so every camera speaks ego coordinates."},{label:"POOL",text:"Sum candidates that land in the same metric BEV cell."}],
+    tensor:{input:"[B,6,3,128,352]",operation:"LIFT → TRANSFORM → SPLAT",output:"[B,64,200,200]",detail:"images → shared metric feature map"},
+    formula:"2D feature + latent depth + calibration → ego-space BEV",
+    handoff:"First prove why an ordinary image feature is not already a BEV feature.",
+    evidence:"PAPER",source:"Paper Fig. 1, Fig. 4 · official forward()",illustration:"overview"
   },
   {
-    id: "perspective-gap", act: "I · THE JOB", title: "A pixel is not a place",
-    question: "Why not simply stitch the six photographs?",
-    reveal: "A pixel fixes a viewing direction, but not a metric location.",
-    explanation: "The same two-pixel shift may mean centimeters nearby or meters far away. Different cameras also have different optical centers. Until depth and calibration are applied, their pixels cannot agree on where an object sits around the car.",
-    steps: [
-      { label: "KNOWN", text: "K⁻¹ converts a pixel into a camera ray." },
-      { label: "UNKNOWN", text: "Depth d chooses one position along that ray." },
-      { label: "LSS MOVE", text: "Keep many depths, then let BEV supervision weight them." }
-    ],
-    formula: "pixel + K⁻¹ ⇒ ray;   ray + depth d ⇒ 3D point",
-    handoff: "Before solving depth, separate what the sample uses from what only audits it.",
-    evidence: "PAPER", source: "Paper Sec. 3.1", illustration: "sample"
+    id:"image-features",act:"II · PREPROCESS, THEN SEE",title:"Images become perspective features",
+    question:"What changes before geometry—and what is still missing?",
+    reveal:"Resize and crop prepare the camera images; the shared encoder learns what appears, but still not where it lies in meters.",
+    explanation:"Each 1600×900 JPEG is resized, cropped to 352×128 and normalized. The exact image warp is saved as post_rot and post_trans so geometry can undo it later. Six cameras are then folded into the batch, passed through one shared EfficientNet, and reduced to an 8×22 field with 105 channels per anchor.",
+    steps:[{label:"PREPROCESS",text:"1600×900 → resize → crop → normalize → 352×128."},{label:"RESHAPE + ENCODE",text:"[B,6,3,128,352] becomes [B·6,3,128,352], then [B·6,105,8,22]."},{label:"REMEMBER WARP",text:"post_rot and post_trans preserve how network pixels relate to calibrated pixels."}],
+    tensor:{input:"[B,6,3,900,1600]",operation:"resize/crop → normalize → fold → CamEncode",output:"[B·6,105,8,22]",detail:"network input is [B,6,3,128,352]; 105 = 41 + 64"},
+    formula:"perspective feature ≠ BEV feature",
+    handoff:"One anchor may say vehicle. Why can it not name one 3D point?",
+    evidence:"OFFICIAL CODE",source:"models.py CamEncode · get_cam_feats()",illustration:"features",lab:"geometry"
   },
   {
-    id: "data-contract", act: "II · THE EVIDENCE", title: "One sample, four roles",
-    question: "Which data actually enters LSS?",
-    reveal: "Images are input; calibration is geometry; boxes are supervision; LiDAR is reference only.",
-    explanation: "This pinned nuScenes frame contains six JPEGs, sensor calibration, ego poses and vehicle annotations. The LiDAR scan is shown only to check spatial alignment. It never enters the released camera-only checkpoint.",
-    steps: [
-      { label: "SEE", text: "Six images carry appearance." },
-      { label: "PLACE", text: "K, R and t place image evidence in ego coordinates." },
-      { label: "TEACH / CHECK", text: "Vehicle boxes form GT; 34,688 LiDAR points verify orientation." }
-    ],
-    formula: "model input = images + calibration   |   target = vehicle BEV mask",
-    handoff: "Now follow only the model input, beginning with image preparation.",
-    evidence: "REAL SAMPLE", source: "nuScenes sample · data.py SegmentationData", illustration: "rig", lab: "geometry"
+    id:"pixel-ray",act:"III · THE MISSING DIMENSION",title:"One pixel means one ray",
+    question:"Why can calibration not map [u,v] directly to one 3D position?",
+    reveal:"Many points at different depths project to the same pixel.",
+    explanation:"K⁻¹ recovers a direction, not a distance. A vehicle feature at 10 m, 25 m or 40 m can occupy the same image anchor. A unique 3D point therefore needs three coordinates: image position [u,v] and depth d.",
+    steps:[{label:"PIXEL",text:"[u,v] identifies one direction from the optical center."},{label:"AMBIGUITY",text:"Every positive d chooses another point on the same ray."},{label:"REQUIREMENT",text:"Camera-to-BEV must represent [u,v,d], not [u,v] alone."}],
+    tensor:{input:"anchor [u′,v′]",operation:"undo post-transform + K⁻¹",output:"camera ray r(u,v)",detail:"direction is known; metric depth is not"},
+    formula:"p_cam(d)=K⁻¹[d·u,d·v,d]ᵀ",
+    handoff:"LSS refuses to guess one hard distance. It builds a distribution.",
+    evidence:"PAPER",source:"Paper Sec. 3.1 · models.py create_frustum()",illustration:"ray",lab:"geometry"
   },
   {
-    id: "image-encoding", act: "III · PREPARE", title: "Compress the image, keep its geometry",
-    question: "How does 1600×900 become an 8×22 feature field?",
-    reveal: "Resize and crop are recorded, not forgotten.",
-    explanation: "The image becomes 352×128 before a shared EfficientNet encoder produces an 8×22 feature grid. post_rot and post_trans remember the pixel transform so geometry can undo it later.",
-    steps: [
-      { label: "RESIZE / CROP", text: "1600×900 → 352×198 → 352×128." },
-      { label: "ENCODE", text: "The same camera encoder processes every view." },
-      { label: "SPLIT", text: "Each anchor emits 41 depth logits and 64 context values." }
-    ],
-    formula: "[B,N,3,128,352] → [B,N,105,8,22] = 41 depth + 64 context",
-    handoff: "Choose one feature anchor. Its next representation is a ray.",
-    evidence: "OFFICIAL CODE", source: "img_transform() · CamEncode · create_frustum()", illustration: "features", lab: "geometry"
+    id:"depth-distribution",act:"IV · WHERE?",title:"DepthNet keeps 41 hypotheses",
+    question:"What exactly is the depth tensor?",
+    reveal:"For every camera and every 8×22 anchor, it stores 41 weights from 4 m through 44 m.",
+    explanation:"Softmax turns the first 41 output channels into a categorical allocation α(d). Think of the 2D feature map as one sheet, then stack 41 depth sheets behind it. The stack says where evidence may live, not what the evidence means.",
+    steps:[{label:"SPLIT",text:"Take channels 0…40 from the 105-channel head."},{label:"SOFTMAX",text:"Normalize along D so Σd α(d)=1 at every anchor."},{label:"UNFOLD",text:"Expose a new D axis: one image anchor becomes 41 candidates."}],
+    tensor:{input:"[B,6,41,8,22] logits",operation:"softmax(dim=D)",output:"α: [B,6,41,8,22]",detail:"41 depth sheets; each anchor sums to one"},
+    formula:"α(d|u,v)=softmax(depth_logits)(d)",
+    handoff:"Depth answers where. A different tensor must answer what.",
+    evidence:"CHECKPOINT",source:"model525000.pt · get_depth_feat()",illustration:"depth",lab:"geometry"
   },
   {
-    id: "pixel-ray", act: "IV · LIFT", title: "Undo the image, open a ray",
-    question: "What exactly does K⁻¹ recover?",
-    reveal: "It recovers direction in camera coordinates—not depth.",
-    explanation: "First undo resize and crop. Then K⁻¹ converts the restored pixel into a camera-frame direction, where +x is right, +y is down and +z is forward. LSS tests 41 z-depths from 4 m to 44 m on this ray.",
-    steps: [
-      { label: "RESTORE", text: "A⁻¹(u′−a) returns the network anchor to raw-image coordinates." },
-      { label: "UNPROJECT", text: "K⁻¹ turns [du,dv,d] into a camera-frame point." },
-      { label: "ENUMERATE", text: "Repeat for d = 4,5,…,44 m." }
-    ],
-    formula: "p_cam(d) = K⁻¹ [d·u, d·v, d]ᵀ",
-    handoff: "The ray supplies possible places; the network supplies their weights.",
-    evidence: "OFFICIAL CODE", source: "create_frustum() · get_geometry()", illustration: "ray", lab: "geometry"
+    id:"context-feature",act:"IV · WHAT?",title:"Context carries the thing itself",
+    question:"Why is depth probability not enough?",
+    reveal:"Depth says where to place evidence; a 64D context vector says what evidence to place.",
+    explanation:"The remaining 64 channels encode appearance and task-relevant semantics at each anchor. Depth and context are deliberately separate: one is a scalar distribution over positions, the other is the feature payload that the BEV network will later interpret.",
+    steps:[{label:"DEPTH HEAD",text:"41 values answer where along the ray."},{label:"CONTEXT HEAD",text:"64 values describe the visual evidence at the anchor."},{label:"KEEP AXES",text:"Context has no D axis yet; it is one vector per [camera,v,u]."}],
+    tensor:{input:"[B,6,105,8,22]",operation:"channel split",output:"depth 41 ⊕ context 64",detail:"where? [41] · what? [64]"},
+    formula:"c(u,v)∈ℝ⁶⁴",
+    handoff:"Now combine where and what without choosing one depth.",
+    evidence:"OFFICIAL CODE",source:"models.py get_depth_feat()",illustration:"context",lab:"geometry"
   },
   {
-    id: "lift", act: "IV · LIFT", title: "Lift without choosing one depth",
-    question: "How can LSS learn 3D without depth labels?",
-    reveal: "It distributes one context feature across all 41 depth candidates.",
-    explanation: "A softmax turns the depth logits into weights α(d). The same 64D context vector c is scaled at each depth, producing α(d)c. BEV segmentation loss—not LiDAR depth—learns which allocations are useful.",
-    steps: [
-      { label: "WEIGH", text: "softmax makes 41 non-negative weights summing to one." },
-      { label: "COPY", text: "The 64D context vector is shared along the ray." },
-      { label: "LIFT", text: "Their outer product forms a [41,64] frustum feature." }
-    ],
-    formula: "f[d,c] = softmax(depth logits)[d] · context[c]",
-    handoff: "Lift creates 3D candidates—but each camera still speaks its own frame.",
-    evidence: "CHECKPOINT", source: "get_depth_feat() · exported real depth allocation", illustration: "lift", lab: "geometry"
+    id:"outer-product",act:"V · LIFT",title:"Outer product performs the Lift",
+    question:"What does α(d)×c actually compute?",
+    reveal:"It copies the same 64D context to all 41 depths and scales each copy by that depth’s weight.",
+    explanation:"Unsqueeze depth with a trailing channel axis and context with a leading depth axis. Broadcasting multiplies [D,1] by [1,C]. No loop or hard argmax is needed: one anchor becomes a [41,64] depth-feature slab, and all anchors form a frustum feature volume.",
+    steps:[{label:"UNSQUEEZE",text:"α → [B,6,41,8,22,1]."},{label:"ALIGN",text:"context → [B,6,1,8,22,64]."},{label:"MULTIPLY",text:"Broadcast to [B,6,41,8,22,64]."}],
+    tensor:{input:"α[...,D,H,W,1] × c[...,1,H,W,C]",operation:"broadcast multiply",output:"[B,6,41,8,22,64]",detail:"43,296 candidates · each carries 64 values"},
+    formula:"F_frustum(d,u,v,c)=α(d|u,v)·c(u,v,c)",
+    handoff:"The feature now has a D axis, but [u,v,d] is still not an XYZ coordinate.",
+    evidence:"OFFICIAL CODE",source:"models.py get_cam_feats()",illustration:"lift",lab:"geometry"
   },
   {
-    id: "exact-geometry", act: "V · SHARE A FRAME", title: "The coordinate chain, in order",
-    question: "How does one lifted point reach the ego frame?",
-    reveal: "Undo image transform → unproject → rotate → translate.",
-    explanation: "With column vectors, the first operation appears on the right. K⁻¹ creates p_cam; R changes its basis into ego axes; t then places the camera’s optical center in ego meters. Changing this order changes the point.",
-    steps: [
-      { label: "IMAGE → CAMERA", text: "Undo A,a; then apply K⁻¹ at depth d." },
-      { label: "CAMERA → EGO", text: "Apply the selected camera’s R and then +t." },
-      { label: "SANITY", text: "Check RᵀR≈I, det(R)≈1 and pixel round trips." }
-    ],
-    formula: "p_ego = Rcam→ego · K⁻¹[d·A⁻¹(u′−a), d]ᵀ + tcam→ego",
-    handoff: "Once points are in ego coordinates, the camera name no longer matters.",
-    evidence: "REAL SAMPLE", source: "get_geometry() · 18 exported golden points", illustration: "geometry", lab: "geometry"
+    id:"intrinsic-unprojection",act:"VI · PIXEL TO CAMERA 3D",title:"Intrinsic turns direction plus depth into XYZ",
+    question:"How does [u,v,d] become a metric camera point?",
+    reveal:"K⁻¹ supplies direction; multiplying by d supplies distance.",
+    explanation:"First invert resize and crop with post_rot and post_trans. Then form [du,dv,d] and apply K⁻¹. The output is measured in the selected camera frame: +x right, +y down, +z optical-forward.",
+    steps:[{label:"UNDO IMAGE",text:"A⁻¹([u′,v′]−a) restores the raw calibrated pixel."},{label:"SCALE",text:"[u,v,1] becomes [du,dv,d]."},{label:"UNPROJECT",text:"K⁻¹ returns [Xc,Yc,Zc] in camera meters."}],
+    tensor:{input:"geometry [B,6,41,8,22,3]",operation:"A⁻¹ then K⁻¹",output:"p_cam [B,6,41,8,22,3]",detail:"same shape; coordinate meaning changes"},
+    formula:"p_cam=K⁻¹[d·A⁻¹(u′−a),d]ᵀ",
+    handoff:"Six camera frames still cannot pool together. Move them into ego.",
+    evidence:"REAL SAMPLE",source:"models.py get_geometry() · golden projection points",illustration:"geometry",lab:"geometry"
   },
   {
-    id: "camera-fusion", act: "V · SHARE A FRAME", title: "Six cameras meet in ego",
-    question: "Where does multi-camera fusion actually happen?",
-    reveal: "Not on image planes. It happens when ego-space candidates land in the same pillar.",
-    explanation: "Each camera is encoded independently with shared weights and transformed by its own calibration. Permuting cameras together with their calibration leaves the final sum unchanged: fusion depends on metric location, not camera order.",
-    steps: [
-      { label: "SEPARATE", text: "Run the shared encoder per camera." },
-      { label: "CALIBRATE", text: "Use that camera’s K, post-transform, R and t." },
-      { label: "MEET", text: "Candidates share evidence only after entering ego space." }
-    ],
-    formula: "pool({Tcam→ego · Lift(image)}₁…N) is invariant to camera order",
-    handoff: "The points agree on a frame. Splat turns them into a dense tensor.",
-    evidence: "PAPER", source: "Paper Sec. 3.2, 5.5 · real camera calibration", illustration: "rig", lab: "geometry"
+    id:"extrinsic-fusion",act:"VII · CAMERA TO EGO",title:"Six cameras meet in one coordinate system",
+    question:"Where does multi-camera fusion really happen?",
+    reveal:"Each camera is transformed separately; fusion happens only after all candidates speak ego XYZ.",
+    explanation:"R rotates camera axes into ego axes and t places the optical center. Images are never stitched. If cameras and calibration are permuted together, the pooled result is unchanged because the later operation cares only about ego position and feature value.",
+    steps:[{label:"ROTATE",text:"Rcam→ego changes the coordinate basis."},{label:"TRANSLATE",text:"+tcam→ego positions the camera on the vehicle."},{label:"CONCATENATE",text:"Flatten camera, depth, row and column into one candidate list."}],
+    tensor:{input:"6 × [41,8,22,3]",operation:"R·p_cam+t; flatten N·D·H·W",output:"[B,43,296,3] + [B,43,296,64]",detail:"geometry and features share candidate index"},
+    formula:"p_ego=Rcam→ego·p_cam+tcam→ego",
+    handoff:"The list now shares meters, but a CNN needs a dense grid.",
+    evidence:"PAPER",source:"Paper Sec. 3.2 · get_geometry()",illustration:"rig",lab:"geometry"
   },
   {
-    id: "splat", act: "VI · SPLAT", title: "Many points become one BEV grid",
-    question: "How are irregular candidates pooled without losing collisions?",
-    reveal: "Filter, quantize, group by voxel rank, then sum.",
-    explanation: "The ground range [−50,50) is divided into 0.5 m cells. Each valid point receives [ix,iy,iz]. Sorting equal ranks together lets QuickCumsum add every 64D feature that lands in the same pillar.",
-    steps: [
-      { label: "FILTER", text: "Remove candidates outside the half-open metric bounds." },
-      { label: "GROUP", text: "floor maps positions to voxel indices; rank identifies collisions." },
-      { label: "SUM", text: "QuickCumsum equals ordinary sum pooling, only faster." }
-    ],
-    formula: "index = floor((p − origin) / Δ),   Fcell = Σ points-in-cell fᵢ",
-    handoff: "Geometry is finished. A BEV CNN now interprets the pooled evidence.",
-    evidence: "OFFICIAL CODE", source: "voxel_pooling() · QuickCumsum", illustration: "splat", lab: "bev"
+    id:"splat",act:"VIII · SPLAT",title:"Voxel pooling rebuilds a BEV tensor",
+    question:"How do 43,296 irregular candidates become indexed BEV cells?",
+    reveal:"Filter, floor-quantize, sort by voxel rank, sum collisions, then scatter.",
+    explanation:"Each ego point receives integer [ix,iy,iz]. Equal voxel ranks become adjacent after sorting. QuickCumsum performs the same grouped sum as a naïve loop, then the compact groups are scattered into [B,C,Z,X,Y].",
+    steps:[{label:"INDEX",text:"floor((p−origin)/Δ) maps meters to voxel indices."},{label:"REDUCE",text:"sort + QuickCumsum sum every 64D collision."},{label:"SCATTER",text:"Write each surviving group into its spatial tensor address."}],
+    tensor:{input:"features [B,43,296,64] + XYZ",operation:"mask → floor → rank → sort → Σ → scatter",output:"[B,64,1,200,200]",detail:"irregular list becomes dense spatial memory"},
+    formula:"Fvoxel[ix,iy,iz]=Σi∈voxel F_i",
+    handoff:"The original configuration has one z bin. Collapse it to BEV.",
+    evidence:"OFFICIAL CODE",source:"voxel_pooling() · QuickCumsum",illustration:"splat",lab:"bev"
   },
   {
-    id: "learn-in-bev", act: "VII · LEARN", title: "Supervise the final map",
-    question: "How does a BEV mask teach latent depth?",
-    reveal: "BCE loss flows backward through the BEV encoder, pooling and Lift.",
-    explanation: "After vertical collapse, BevEncode adds spatial context and emits one raw vehicle logit per cell. BCEWithLogits compares it with the rasterized vehicle mask. The gradient reaches every depth weight and context feature that contributed to a wrong cell.",
-    steps: [
-      { label: "REASON", text: "[B,64,200,200] → multiscale BEV CNN." },
-      { label: "COMPARE", text: "Predicted logits versus binary vehicle occupancy." },
-      { label: "BACKPROP", text: "The BEV error indirectly shapes α(d); no depth target is used." }
-    ],
-    formula: "L = BCEWithLogits(BEV logits, vehicle mask)",
-    handoff: "Training ends at a task-specific BEV representation. Now read it correctly.",
-    evidence: "OFFICIAL CODE", source: "BevEncode · SimpleLoss", illustration: "learning", lab: "bev"
+    id:"bev-encoder",act:"IX · REASON IN BEV",title:"Collapse height, then learn spatial context",
+    question:"When does the tensor finally become a camera BEV feature?",
+    reveal:"After z is folded into channels, BevEncode operates on a regular [B,64,200,200] ground map.",
+    explanation:"The geometric job ends at voxel pooling. BevEncode then uses a ResNet-18-style multiscale CNN to interpret neighborhoods and emit one vehicle logit per cell. BCE supervision travels backward through the BEV CNN, pooling and outer product into latent depth.",
+    steps:[{label:"COLLAPSE Z",text:"Concatenate Z into channels; here Z=1, so C stays 64."},{label:"ENCODE",text:"Multiscale 2D convolution adds BEV context."},{label:"SUPERVISE",text:"BCEWithLogits compares [B,1,200,200] with the vehicle mask."}],
+    tensor:{input:"[B,64,1,200,200]",operation:"collapse Z → BevEncode",output:"logits [B,1,200,200]",detail:"geometry ends; task learning begins"},
+    formula:"L=BCEWithLogits(logits,vehicle_mask)",
+    handoff:"Now audit one real output without expecting it to resemble a camera image.",
+    evidence:"OFFICIAL CODE",source:"models.py BevEncode · train.py SimpleLoss",illustration:"learning",lab:"bev"
   },
   {
-    id: "truth-lab", act: "VIII · READ THE RESULT", title: "A BEV heatmap is not a camera image",
-    question: "How do we know the output is aligned rather than mirrored?",
-    reveal: "Audit it in meters with GT, LiDAR and fixed ego axes—not by matching silhouettes.",
-    explanation: "Lift deliberately spreads image evidence along depth, then rotates and mixes it across cameras. The correct match is metric and object-level. In this frame, threshold 0.5 gives TP 282, FP 122, FN 120 and IoU 0.538; this is a diagnostic, not the paper’s validation score.",
-    steps: [
-      { label: "DECODE", text: "logit → sigmoid probability → optional threshold." },
-      { label: "ORIENT", text: "ego +x is screen up; ego +y is screen left." },
-      { label: "VERIFY", text: "GT boxes and reference LiDAR expose flips and offsets." }
-    ],
-    formula: "[x,y]ego ↔ [⌊(x+50)/.5⌋, ⌊(y+50)/.5⌋]BEV",
-    handoff: "One real frame is understood. Finish by separating evidence from ambition.",
-    evidence: "CHECKPOINT", source: "model525000.pt · nuScenes GT · reference LiDAR", illustration: "truth", lab: "bev"
+    id:"truth-lab",act:"X · TRACE THE WHOLE TENSOR",title:"Read one real frame end to end",
+    question:"How do we verify the tensor orientation and output meaning?",
+    reveal:"Use fixed ego axes, nuScenes GT and reference LiDAR to audit the map—not image-shaped similarity.",
+    explanation:"At threshold 0.5 this pinned frame yields TP 282, FP 122, FN 120 and IoU 0.538. The LiDAR scan never enters inference; it exposes flips, offsets and object locations. The checkpoint output is semantic vehicle occupancy, not boxes or tracks.",
+    steps:[{label:"DECODE",text:"logit → sigmoid → optional threshold."},{label:"ORIENT",text:"ego +x is screen up; ego +y is screen left."},{label:"VERIFY",text:"Linked GT and reference points check the same metric cells."}],
+    tensor:{input:"logits [1,1,200,200]",operation:"sigmoid + threshold + compare GT",output:"TP 282 · FP 122 · FN 120 · IoU .538",detail:"single-frame diagnostic, not paper validation IoU"},
+    formula:"ego [x,y] ↔ BEV [⌊(x+50)/.5⌋,⌊(y+50)/.5⌋]",
+    handoff:"Finish by separating the core mechanism from paper results and Shoot.",
+    evidence:"CHECKPOINT",source:"model525000.pt · nuScenes GT · reference LiDAR",illustration:"truth",lab:"bev"
   },
   {
-    id: "evidence-action", act: "IX · THE BOUNDARY", title: "What LSS proves—and what it does not",
-    question: "Which claims belong to the paper, checkpoint and teaching lab?",
-    reveal: "Explicit geometry works well, but it does not remove uncertainty or failure modes.",
-    explanation: "The paper reports vehicle IoU 32.07 for Lift-Splat versus 30.05 OFT and 24.25 CNN. It also tests missing cameras, calibration noise and new rigs. Shoot maps BEV costs to trajectory probabilities, but no planning checkpoint was released here.",
-    steps: [
-      { label: "PROVEN", text: "Strong camera-BEV segmentation and useful rig inductive biases." },
-      { label: "FRAGILE", text: "Night, distance, occlusion, calibration error and missing views still matter." },
-      { label: "TEACHING", text: "The Shoot trajectories reconstruct the paper equation only." }
-    ],
-    formula: "p(trajectoryᵢ) ∝ exp(−cost(trajectoryᵢ) / temperature)",
-    handoff: "The main idea survives every detail: lift uncertain evidence, splat it into shared metric space.",
-    evidence: "PAPER", source: "Paper Tables 1–5 · Eq. 2 · Sec. 5", illustration: "shoot", lab: "robustness"
+    id:"evidence-action",act:"XI · REMEMBER THE CORE",title:"One sentence should survive",
+    question:"What should remain after every shape and matrix is forgotten?",
+    reveal:"LSS adds latent depth to 2D features, returns them to shared ego 3D, then pools them into BEV.",
+    explanation:"The paper reports Lift-Splat vehicle IoU 32.07 versus OFT 30.05 and CNN 24.25, and studies missing cameras and calibration noise. Shoot consumes BEV costs for trajectory scoring, but the released segmentation checkpoint stops at vehicle logits.",
+    steps:[{label:"LIFT",text:"where distribution × what feature."},{label:"SPLAT",text:"camera XYZ → ego XYZ → indexed BEV sums."},{label:"SHOOT",text:"optional downstream planning use, reconstructed here from the equation."}],
+    tensor:{input:"images",operation:"feature → depth×context → geometry → pooling",output:"task-ready BEV",detail:"the complete computation in one line"},
+    formula:"p(τi|o)∝exp(−cost(τi)/T)",
+    handoff:"If you can explain each arrow and each shape, you understand original LSS.",
+    evidence:"PAPER",source:"Paper Tables 1–5 · Eq. 2 · Sec. 5",illustration:"shoot",lab:"robustness"
   }
 ];
 
-export function sceneIndexFromHash(hash: string) {
-  const id = hash.replace(/^#/, "");
-  const index = SCENES.findIndex((scene) => scene.id === id);
-  return index < 0 ? 0 : index;
-}
+export function sceneIndexFromHash(hash:string){const id=hash.replace(/^#/,"");const index=SCENES.findIndex(scene=>scene.id===id);return index<0?0:index;}

@@ -128,13 +128,18 @@ export default function LssExplainer() {
   const activeLab=scene.lab==="geometry"?<GeometryLab rig={rig} selectedCamera={selectedCamera} setSelectedCamera={setSelectedCamera} depth={depth} depthIndex={depthIndex} setDepthIndex={setDepthIndex} />:scene.lab==="bev"?<BevLab rig={rig} selectedCamera={selectedCamera} setSelectedCamera={setSelectedCamera} bevMode={bevMode} setBevMode={setBevMode} threshold={threshold} setThreshold={setThreshold} opacity={bevOpacity} setOpacity={setBevOpacity} rawGrid={rawGrid} setRawGrid={setRawGrid} stats={stats} activeVariant={activeVariant} />:scene.lab==="robustness"?<RobustnessLab rig={rig} selectedCamera={selectedCamera} setSelectedCamera={setSelectedCamera} enabled={enabled} setEnabled={setEnabled} yaw={yaw} setYaw={setYaw} trajectories={trajectories} selectedTrajectory={selectedTrajectory} setSelectedTrajectory={setSelectedTrajectory} temperature={temperature} setTemperature={setTemperature} />:null;
 
   return <main className={`visual-essay scene-${activeScene} ${labOpen?"lab-open":""}`}>
-    <header className="essay-header"><a href={asset("/")}><span>LSS</span><b>EXPLAINED</b><sup>v8</sup></a><div><button onClick={()=>setContentsOpen(!contentsOpen)} aria-expanded={contentsOpen}><Menu />Contents</button><a href={asset("/articles/lift-splat-shoot-source-notes.md")}>Source notes</a><a href="https://github.com/hova88/lss-explained">GitHub ↗</a></div></header>
+    <header className="essay-header"><a href={asset("/")}><span>LSS</span><b>EXPLAINED</b><sup>v9</sup></a><div><button onClick={()=>setContentsOpen(!contentsOpen)} aria-expanded={contentsOpen}><Menu />Contents</button><a href={asset("/articles/lift-splat-shoot-source-notes.md")}>Source notes</a><a href="https://github.com/hova88/lss-explained">GitHub ↗</a></div></header>
     {contentsOpen&&<nav className="contents-drawer" aria-label="Table of contents"><button className="drawer-close" onClick={()=>setContentsOpen(false)}><X /></button><p>FIELD INDEX · 12 SCENES</p>{SCENES.map((item,index)=><button key={item.id} className={index===activeScene?"active":""} onClick={()=>go(index)}><span>{String(index+1).padStart(2,"0")}</span><b>{item.title}</b><small>{item.act}</small></button>)}</nav>}
 
     <section className="persistent-stage" aria-live="polite">
       <IllustrationStage scene={scene} progress={progress} selectedCamera={selectedCamera} depthIndex={depthIndex} onCameraSelect={setSelectedCamera} onDepthSelect={setDepthIndex} />
       <StoryStep index={activeScene} />
       <aside className="lecture-note"><b>{String(activeScene+1).padStart(2,"0")}.</b><span>{scene.steps[activeScene%3].text}</span></aside>
+      <div className="tensor-ledger" aria-label="Tensor operation for this scene">
+        <code>{scene.tensor.input}</code>
+        <span><b>{scene.tensor.operation}</b><small>{scene.tensor.detail}</small></span>
+        <code>{scene.tensor.output}</code>
+      </div>
       <div className="gesture-note">DRAG TO ROTATE · SCROLL TO ZOOM · CLICK CAMERA OR DEPTH</div>
       {scene.lab&&<button className="lab-toggle" onClick={()=>setLabOpen(!labOpen)}>{labOpen?"Close evidence":"Open evidence"}</button>}
     </section>
