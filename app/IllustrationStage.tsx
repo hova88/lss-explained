@@ -299,8 +299,10 @@ export function IllustrationStage(props: IllustrationStageProps) {
     <div className="illustration-stage">
       <canvas ref={canvasRef}
         onPointerDown={(event)=>{event.currentTarget.setPointerCapture(event.pointerId);dragRef.current={x:event.clientX,y:event.clientY,yaw:view.yaw};}}
-        onPointerMove={(event)=>{if(!dragRef.current)return;const delta=event.clientX-dragRef.current.x;if(Math.abs(delta)>3)setView(current=>({...current,yaw:dragRef.current!.yaw+delta*.006}));}}
+        onPointerMove={(event)=>{const drag=dragRef.current;if(!drag)return;const delta=event.clientX-drag.x;if(Math.abs(delta)>3){const yaw=drag.yaw+delta*.006;setView(current=>Math.abs(current.yaw-yaw)<1e-6?current:{...current,yaw});}}}
         onPointerUp={(event)=>{const drag=dragRef.current;dragRef.current=null;if(!drag||Math.hypot(event.clientX-drag.x,event.clientY-drag.y)>8)return;const rect=event.currentTarget.getBoundingClientRect(),x=event.clientX-rect.left,y=event.clientY-rect.top;const hit=hitsRef.current.reduce<HitRegion|null>((best,item)=>Math.hypot(item.x-x,item.y-y)<=item.radius?item:best,null);if(hit?.kind==="camera")props.onCameraSelect?.(hit.index);if(hit?.kind==="depth")props.onDepthSelect?.(hit.index);}}
+        onPointerCancel={()=>{dragRef.current=null;}}
+        onLostPointerCapture={()=>{dragRef.current=null;}}
         onWheel={(event)=>{event.preventDefault();setView(current=>({...current,zoom:Math.max(.72,Math.min(1.5,current.zoom-event.deltaY*.001))}));}}
         aria-label="Interactive spatial hand-drawn diagram" />
       <div className="sketch-note note-a">calibrated evidence</div>

@@ -167,12 +167,13 @@ test("pinned alignment contract and LiDAR binary are internally consistent",asyn
 });
 
 test("v10 public experience is English-only and defines ten LSS/BEVDepth tensor scenes",async()=>{
-  const [content,explainer,layout]=await Promise.all([
+  const [content,explainer,layout,illustration]=await Promise.all([
     readFile(new URL("../app/lss-content.ts",import.meta.url),"utf8"),
     readFile(new URL("../app/LssExplainer.tsx",import.meta.url),"utf8"),
     readFile(new URL("../app/layout.tsx",import.meta.url),"utf8"),
+    readFile(new URL("../app/IllustrationStage.tsx",import.meta.url),"utf8"),
   ]);
-  const source=`${content}\n${explainer}\n${layout}`;
+  const source=`${content}\n${explainer}\n${layout}\n${illustration}`;
   assert.equal((content.match(/id:\s*\"[a-z-]+\"/g)??[]).length,10);
   assert.equal(/[\u3400-\u9fff]/u.test(source),false);
   assert.equal(/type\s+Locale|Localized|setLanguage|language-switch/.test(source),false);
@@ -188,6 +189,9 @@ test("v10 public experience is English-only and defines ten LSS/BEVDepth tensor 
   assert.ok(explainer.includes("go(target,step)"));
   assert.ok(explainer.includes("TRACE_TENSORS[geometryStep]"));
   assert.ok(explainer.includes("SAME SAMPLE ID, CAMERA AND DEPTH STAY FIXED")||explainer.includes("SAMPLE ID, CAMERA AND DEPTH STAY FIXED"));
+  assert.equal(illustration.includes("dragRef.current!.yaw"),false);
+  assert.ok(illustration.includes("const drag=dragRef.current"));
+  assert.ok(illustration.includes("onPointerCancel"));
   assert.ok(explainer.includes("pool-control"));
   assert.ok(content.includes("get_downsampled_gt_depth()"));
   assert.ok(content.includes("L=Ldet+3Ldepth"));
