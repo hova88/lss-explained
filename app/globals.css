@@ -263,7 +263,7 @@ input[type="range"] { width: 100%; accent-color: var(--rust); }
 .lesson-timeline>button:disabled { opacity:.2; cursor:default; }
 .lesson-timeline svg { width:17px; height:17px; }
 .play-control { width:36px;height:36px;border:1px solid var(--ink)!important;border-radius:50%!important; }
-.lesson-timeline>div { display:grid; grid-template-columns:repeat(7,1fr); align-items:start; height:48px; }
+.lesson-timeline>div { display:grid; grid-template-columns:repeat(8,1fr); align-items:start; height:48px; }
 .lesson-timeline>div button { position:relative; height:48px; border:0; border-top:1px solid rgba(35,39,36,.35); padding:0; background:transparent; cursor:pointer; }
 .lesson-timeline>div button i { position:absolute; top:-4px; left:50%; width:7px;height:7px;border:1px solid var(--ink);border-radius:50%;background:var(--paper); transform:translateX(-50%); }
 .lesson-timeline>div button span { position:absolute; top:13px; left:50%; width:98px; opacity:0; transform:translateX(-50%); font:600 11px/1 Caveat,cursive; pointer-events:none; }
@@ -274,7 +274,7 @@ input[type="range"] { width: 100%; accent-color: var(--rust); }
 .evidence-drawer .lab-break { width:100%; min-height:100%; padding:38px 30px; border:0; box-shadow:none; }
 .evidence-drawer .lab-heading h2 { font-size:38px; }
 
-/* v11 · restrained seven-scene tensor narrative */
+/* v12 · restrained eight-scene tensor narrative */
 .story-step { width:min(350px,29vw); }
 .story-step h2 { max-width:350px; font-size:clamp(38px,3.4vw,50px); }
 .scene-reveal { max-width:335px; font-size:clamp(15px,1.25vw,18px); }
@@ -282,8 +282,8 @@ input[type="range"] { width: 100%; accent-color: var(--rust); }
 .scene-formula { max-width:335px; padding:7px 9px; background:rgba(251,246,235,.58); }
 .story-step footer { max-width:330px; margin-top:7px; padding-top:6px; }
 .tensor-ledger { left:30%; right:18%; }
-.scene-0 .illustration-stage { opacity:.1; }
-.scene-0 .sketch-note { display:none; }
+.scene-1 .illustration-stage { opacity:.1; }
+.scene-1 .sketch-note { display:none; }
 
 .ray-inspector { position:absolute; z-index:5; top:76px; right:3%; bottom:76px; left:34%; display:grid; grid-template-columns:minmax(360px,1.35fr) minmax(250px,.8fr); gap:20px; color:var(--ink); }
 .ray-inspector.loading { place-items:center; color:var(--muted); font:500 8px/1 DM Mono,monospace; }
@@ -351,5 +351,5 @@ input[type="range"] { width: 100%; accent-color: var(--rust); }
   .ray-signals .depth-sketch { height:82px; }
   .ray-signals>code { grid-column:1/3; }
   .signal-context>div { gap:2px; }
-  .scene-0 .tensor-ledger { display:none; }
+  .scene-1 .tensor-ledger { display:none; }
 }

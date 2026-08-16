@@ -1,6 +1,6 @@
 # LSS and BEVDepth source notes
 
-These notes accompany **LSS Explained v11**. The lesson follows one selected ray through seven scenes, then uses BEVDepth to expose the part of the original LSS design that is easiest to misunderstand: how the depth branch is trained.
+These notes accompany **LSS Explained v12**. The lesson begins with the complete camera-to-BEV contract, follows one selected ray through the remaining seven scenes, then uses BEVDepth to expose the part of the original LSS design that is easiest to misunderstand: how the depth branch is trained.
 
 The site keeps five evidence classes separate:
 

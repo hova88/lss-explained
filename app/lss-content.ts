@@ -13,7 +13,18 @@ export type NarrativeScene = {
 
 export const SCENES:NarrativeScene[] = [
   {
-    id:"ray-evidence",act:"01 · ONE RAY",title:"One ray, two predictions",
+    id:"motivation",act:"01 · THE CONTRACT",title:"Six views in. One metric map out.",
+    question:"What transformation does LSS promise?",
+    reveal:"Change the coordinate system—not merely the features.",
+    explanation:"Images begin in six perspective grids. Lift proposes depth, geometry moves candidates into ego meters, and Splat writes one shared BEV tensor.",
+    steps:[{label:"INPUT",text:"Six calibrated camera images."},{label:"TRANSFORM",text:"Lift → calibrated geometry → Splat."},{label:"OUTPUT",text:"One ego-centric tensor for a task head."}],
+    tensor:{input:"images [B,6,3,128,352] + K,R,t",operation:"Lift → geometry → Splat",output:"ego BEV [B,64,200,200]",detail:"perspective topology becomes metric topology"},
+    formula:"image grids → frustum candidates → ego BEV",
+    handoff:"The uncertain step is depth. Inspect one ray first.",
+    evidence:"LSS PAPER",source:"LSS Sec. 1 & 3 · inference input is camera-only",illustration:"overview"
+  },
+  {
+    id:"ray-evidence",act:"02 · ONE RAY",title:"One ray, two predictions",
     question:"What does CamEncode attach to one image location?",
     reveal:"Depth says where. Context says what.",
     explanation:"Click the real image. Its nearest feature anchor owns one 41-bin depth allocation and one 64-channel context vector.",
@@ -24,7 +35,7 @@ export const SCENES:NarrativeScene[] = [
     evidence:"CHECKPOINT",source:"model525000.pt · CamEncode.get_depth_feat()",illustration:"overview"
   },
   {
-    id:"lift-geometry",act:"02 · LIFT + GEOMETRY",title:"Give every hypothesis a place",
+    id:"lift-geometry",act:"03 · LIFT + GEOMETRY",title:"Give every hypothesis a place",
     question:"How does one feature anchor become 41 ego-frame candidates?",
     reveal:"Lift copies the context across depth; calibration turns every copy into ego meters.",
     explanation:"Follow one unchanged sample through image warp, intrinsics, metric depth and camera-to-ego extrinsics.",
@@ -35,7 +46,7 @@ export const SCENES:NarrativeScene[] = [
     evidence:"LSS CODE",source:"get_cam_feats() · get_geometry() · real nuScenes K,R,t",illustration:"image-ray",lab:"geometry"
   },
   {
-    id:"splat-pooling",act:"03 · SPLAT",title:"Resolve collisions",
+    id:"splat-pooling",act:"04 · SPLAT",title:"Resolve collisions",
     question:"What survives when several candidates enter one cell?",
     reveal:"LSS floors, groups and sums.",
     explanation:"Move one candidate. Compare sum, mean, max and bilinear splatting without changing its feature value.",
@@ -46,7 +57,7 @@ export const SCENES:NarrativeScene[] = [
     evidence:"LSS CODE",source:"voxel_pooling() · QuickCumsum",illustration:"splat"
   },
   {
-    id:"bev-encoder",act:"04 · BEV ENCODER",title:"Reason on the ground plane",
+    id:"bev-encoder",act:"05 · BEV ENCODER",title:"Reason on the ground plane",
     question:"Where does geometry end and learned spatial reasoning begin?",
     reveal:"After Splat, every axis is regular.",
     explanation:"Collapse Z, fuse BEV scales, and emit task logits. No camera projection remains inside BevEncode.",
@@ -57,7 +68,7 @@ export const SCENES:NarrativeScene[] = [
     evidence:"LSS CODE",source:"BevEncode.forward()",illustration:"bev-encoder"
   },
   {
-    id:"supervision",act:"05 · SUPERVISION",title:"Where does depth learn?",
+    id:"supervision",act:"06 · SUPERVISION",title:"Where does depth learn?",
     question:"Why do LSS and BEVDepth share Lift–Splat but learn different depth?",
     reveal:"LSS learns depth through the task. BEVDepth adds direct depth supervision.",
     explanation:"BEVDepth projects training LiDAR, keeps the nearest valid depth per block, bins it, then applies sparse depth BCE.",
@@ -68,7 +79,7 @@ export const SCENES:NarrativeScene[] = [
     evidence:"BEVDEPTH CODE",source:"get_downsampled_gt_depth() · get_depth_loss()",illustration:"learning"
   },
   {
-    id:"inference",act:"06 · INFERENCE",title:"Decode only what was trained",
+    id:"inference",act:"07 · INFERENCE",title:"Decode only what was trained",
     question:"What comes after the BEV tensor?",
     reveal:"The head defines the product.",
     explanation:"The released LSS checkpoint predicts vehicle occupancy. BEVDepth uses a 3D detection head; this site does not mix their outputs.",
@@ -79,7 +90,7 @@ export const SCENES:NarrativeScene[] = [
     evidence:"LSS CODE",source:"eval_model_iou() · model525000.pt",illustration:"truth"
   },
   {
-    id:"truth-lab",act:"07 · TRUTH LAB",title:"Check the coordinate story",
+    id:"truth-lab",act:"08 · TRUTH LAB",title:"Check the coordinate story",
     question:"Do prediction, GT and LiDAR agree in ego space?",
     reveal:"Compare them in one orientation—not by image resemblance.",
     explanation:"LiDAR and GT are reference evidence. They never enter this LSS checkpoint.",
@@ -91,4 +102,4 @@ export const SCENES:NarrativeScene[] = [
   }
 ];
 
-export function sceneIndexFromHash(hash:string){const id=hash.replace(/^#/,"");const aliases:Record<string,string>={motivation:"ray-evidence","depth-distribution":"ray-evidence","context-feature":"ray-evidence","lift-outer-product":"lift-geometry","image-to-ray":"lift-geometry","ray-to-camera":"lift-geometry","camera-to-ego":"lift-geometry","encoder-supervision":"supervision"};const resolved=aliases[id]??id,index=SCENES.findIndex(scene=>scene.id===resolved);return index<0?0:index;}
+export function sceneIndexFromHash(hash:string){const id=hash.replace(/^#/,"");const aliases:Record<string,string>={"depth-distribution":"ray-evidence","context-feature":"ray-evidence","lift-outer-product":"lift-geometry","image-to-ray":"lift-geometry","ray-to-camera":"lift-geometry","camera-to-ego":"lift-geometry","encoder-supervision":"supervision"};const resolved=aliases[id]??id,index=SCENES.findIndex(scene=>scene.id===resolved);return index<0?0:index;}
