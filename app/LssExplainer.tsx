@@ -13,6 +13,15 @@ type SceneCamera = { cam2img:number[][]; cam2ego:number[][]; lidar2cam:number[][
 type Trajectory = { name:string; points:[number,number][]; cost:number; probability:number };
 const CAMERA_NAMES=["CAM_FRONT_LEFT","CAM_FRONT","CAM_FRONT_RIGHT","CAM_BACK_RIGHT","CAM_BACK","CAM_BACK_LEFT"];
 const GEOMETRY_DEFAULTS:Record<string,number>={"image-to-ray":2,"ray-to-camera":3,"camera-to-ego":4};
+const GEOMETRY_TARGETS=["image-to-ray","image-to-ray","image-to-ray","ray-to-camera","camera-to-ego"] as const;
+const TRACE_LABELS=["p′ network","p raw","ray r","p camera","p ego"] as const;
+const TRACE_TENSORS=[
+  {input:"feature anchor [h,w]",operation:"read frustum sample",detail:"network-image coordinates after resize and crop",output:"p′=[u′,v′,1] · network pixels"},
+  {input:"p′ + post_rot A + post_trans a",operation:"A⁻¹(p′−a)",detail:"undo the exact resize/crop augmentation",output:"p=[u,v,1] · raw-image pixels"},
+  {input:"p=[u,v,1] + intrinsics K",operation:"K⁻¹p",detail:"remove focal length and principal point",output:"r_cam=[x/z,y/z,1] · direction"},
+  {input:"r_cam + selected depth d",operation:"d · r_cam",detail:"depth supplies metric scale along the same ray",output:"p_cam=[x,y,z] · camera meters"},
+  {input:"p_cam + R_cam→ego,t_cam→ego",operation:"R p_cam + t",detail:"rotate the basis, then move the optical center",output:"p_ego=[x,y,z] · ego meters"},
+] as const;
 
 type EncodedArray = { shape:number[]; dtype:string; data:string };
 type CameraRecord = SceneCamera & { name:string; image:string; network_image:string; post_rot:number[][]; post_trans:number[]; timestamp:number; augmentation:{resize:number;resize_dims:number[];crop:number[]} };
@@ -114,7 +123,7 @@ export default function LssExplainer() {
 
   useEffect(()=>{const frame=requestAnimationFrame(()=>{const initial=sceneIndexFromHash(location.hash);setActiveScene(initial);setGeometryStep(GEOMETRY_DEFAULTS[SCENES[initial].id]??2);});return()=>cancelAnimationFrame(frame);},[]);
 
-  const go=useCallback((index:number)=>{const next=Math.max(0,Math.min(SCENES.length-1,index));setActiveScene(next);setGeometryStep(GEOMETRY_DEFAULTS[SCENES[next].id]??2);setProgress(0);setLabOpen(false);setContentsOpen(false);history.replaceState(null,"",`#${SCENES[next].id}`);requestAnimationFrame(()=>setProgress(1));},[]);
+  const go=useCallback((index:number,traceStep?:number)=>{const next=Math.max(0,Math.min(SCENES.length-1,index));setActiveScene(next);setGeometryStep(traceStep??GEOMETRY_DEFAULTS[SCENES[next].id]??2);setProgress(0);setLabOpen(false);setContentsOpen(false);history.replaceState(null,"",`#${SCENES[next].id}`);requestAnimationFrame(()=>setProgress(1));},[]);
   useEffect(()=>{const handler=(event:KeyboardEvent)=>{if(event.key==="Escape")setContentsOpen(false);if(event.key==="ArrowDown"||event.key==="ArrowRight"){event.preventDefault();go(activeScene+1);}if(event.key==="ArrowUp"||event.key==="ArrowLeft"){event.preventDefault();go(activeScene-1);}};addEventListener("keydown",handler);return()=>removeEventListener("keydown",handler);},[activeScene,go]);
   useEffect(()=>{if(!playing)return;const timer=setInterval(()=>setActiveScene(current=>{const next=(current+1)%SCENES.length;setGeometryStep(GEOMETRY_DEFAULTS[SCENES[next].id]??2);history.replaceState(null,"",`#${SCENES[next].id}`);setProgress(0);requestAnimationFrame(()=>setProgress(1));return next;}),6500);return()=>clearInterval(timer);},[playing]);
 
@@ -129,8 +138,9 @@ export default function LssExplainer() {
   const trajectories=useMemo<Trajectory[]>(()=>{const paths=Array.from({length:9},(_,index)=>Array.from({length:21},(_,sample)=>{const y=sample*.72;return[(index-4)*.017*y*y,y] as [number,number];}));const map=([x,y]:[number,number])=>.055*Math.abs(x)+.85*Math.exp(-((x-2.3)**2+(y-9)**2)/5)+.5*Math.exp(-((x+1.4)**2+(y-13)**2)/3),costs=paths.map((path)=>trajectoryCost(path,map,.14)),probabilities=boltzmannProbabilities(costs,temperature);return costs.map((cost,index)=>({name:index===costs.indexOf(Math.min(...costs))?"minimum cost":`template ${index+1}`,points:paths[index],cost,probability:probabilities[index]})).sort((a,b)=>a.cost-b.cost);},[temperature]);
   const scene=SCENES[activeScene];
   const geometryScene=["image-to-ray","ray-to-camera","camera-to-ego"].includes(scene.id);
+  const traceGeometry=(step:number)=>{const target=SCENES.findIndex(item=>item.id===GEOMETRY_TARGETS[step]);go(target,step);};
   const poolCopy:Record<PoolingMode,{operation:string;detail:string;formula:string}>={sum:{operation:"grouped SUM",detail:"preserves accumulated evidence · official LSS",formula:"Σ fᵢ"},mean:{operation:"grouped MEAN",detail:"normalizes away contributor count · comparison",formula:"Σ fᵢ / n"},max:{operation:"channel-wise MAX",detail:"keeps the strongest response · comparison",formula:"maxᵢ fᵢ"},bilinear:{operation:"4-neighbor weighted SPLAT",detail:"smoothly spreads one candidate · comparison",formula:"Σ wᵢⱼ fᵢ"}};
-  const tensor=scene.id==="splat-pooling"?{...scene.tensor,operation:poolCopy[poolingMode].operation,detail:poolCopy[poolingMode].detail}:scene.tensor;
+  const tensor=geometryScene?TRACE_TENSORS[geometryStep]:scene.id==="splat-pooling"?{...scene.tensor,operation:poolCopy[poolingMode].operation,detail:poolCopy[poolingMode].detail}:scene.tensor;
 
   const activeLab=scene.lab==="geometry"?<GeometryLab rig={rig} selectedCamera={selectedCamera} setSelectedCamera={setSelectedCamera} depth={depth} depthIndex={depthIndex} setDepthIndex={setDepthIndex} />:scene.lab==="bev"?<BevLab rig={rig} selectedCamera={selectedCamera} setSelectedCamera={setSelectedCamera} bevMode={bevMode} setBevMode={setBevMode} threshold={threshold} setThreshold={setThreshold} opacity={bevOpacity} setOpacity={setBevOpacity} rawGrid={rawGrid} setRawGrid={setRawGrid} stats={stats} activeVariant={activeVariant} />:scene.lab==="robustness"?<RobustnessLab rig={rig} selectedCamera={selectedCamera} setSelectedCamera={setSelectedCamera} enabled={enabled} setEnabled={setEnabled} yaw={yaw} setYaw={setYaw} trajectories={trajectories} selectedTrajectory={selectedTrajectory} setSelectedTrajectory={setSelectedTrajectory} temperature={temperature} setTemperature={setTemperature} />:null;
 
@@ -147,9 +157,9 @@ export default function LssExplainer() {
         <span><b>{tensor.operation}</b><small>{tensor.detail}</small></span>
         <code>{tensor.output}</code>
       </div>
-      {geometryScene&&<div className="stage-control frame-control"><small>TRACE THE SAME SAMPLE</small><div>{["p′ network","p raw","ray r","p camera","p ego"].map((label,index)=><button key={label} className={geometryStep===index?"active":""} onClick={()=>setGeometryStep(index)}>{index}<span>{label}</span></button>)}</div></div>}
+      {geometryScene&&<div className="stage-control frame-control"><small>ONE SAMPLE · FIVE COORDINATE STATES</small><div>{TRACE_LABELS.map((label,index)=><button key={label} className={geometryStep===index?"active":""} aria-current={geometryStep===index?"step":undefined} title={`Show ${label} in ${GEOMETRY_TARGETS[index]}`} onClick={()=>traceGeometry(index)}>{index}<span>{label}</span></button>)}</div></div>}
       {scene.id==="splat-pooling"&&<div className="stage-control pool-control"><small>COLLISION RULE · <b>{poolCopy[poolingMode].formula}</b></small><div>{(["sum","mean","max","bilinear"] as PoolingMode[]).map(mode=><button key={mode} className={poolingMode===mode?"active":""} onClick={()=>setPoolingMode(mode)}>{mode}</button>)}</div><label>move candidate<input type="range" min="0" max="1" step=".01" value={poolOffset} onChange={event=>setPoolOffset(Number(event.target.value))} /></label></div>}
-      <div className="gesture-note">DRAG TO ROTATE · SCROLL TO ZOOM · CLICK CAMERA OR DEPTH</div>
+      <div className="gesture-note">{geometryScene?"SELECT A STATE · THE SAMPLE ID, CAMERA AND DEPTH STAY FIXED":scene.id==="splat-pooling"?"CHOOSE A REDUCTION · MOVE THE RUST CANDIDATE":"DRAG TO ROTATE · SCROLL TO ZOOM · CLICK CAMERA OR DEPTH"}</div>
       {scene.lab&&<button className="lab-toggle" onClick={()=>setLabOpen(!labOpen)}>{labOpen?"Close evidence":"Open evidence"}</button>}
     </section>
     {labOpen&&activeLab&&<div className="evidence-drawer">{activeLab}</div>}

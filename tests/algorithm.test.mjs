@@ -184,6 +184,10 @@ test("v10 public experience is English-only and defines ten LSS/BEVDepth tensor 
   assert.ok(explainer.includes("lesson-timeline"));
   assert.ok(explainer.includes("tensor-ledger"));
   assert.ok(explainer.includes("frame-control"));
+  assert.ok(explainer.includes('GEOMETRY_TARGETS=["image-to-ray","image-to-ray","image-to-ray","ray-to-camera","camera-to-ego"]'));
+  assert.ok(explainer.includes("go(target,step)"));
+  assert.ok(explainer.includes("TRACE_TENSORS[geometryStep]"));
+  assert.ok(explainer.includes("SAME SAMPLE ID, CAMERA AND DEPTH STAY FIXED")||explainer.includes("SAMPLE ID, CAMERA AND DEPTH STAY FIXED"));
   assert.ok(explainer.includes("pool-control"));
   assert.ok(content.includes("get_downsampled_gt_depth()"));
   assert.ok(content.includes("L=Ldet+3Ldepth"));

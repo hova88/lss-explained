@@ -11,7 +11,7 @@ type IllustrationStageProps = {
   geometryStep: number;
   poolingMode: "sum" | "mean" | "max" | "bilinear";
   poolOffset: number;
-  cameraPoses?: Array<{cam2ego:number[][]}>;
+  cameraPoses?: Array<{cam2ego:number[][];cam2img:number[][];post_rot:number[][];post_trans:number[];name?:string}>;
   onCameraSelect?: (index:number)=>void;
   onDepthSelect?: (index:number)=>void;
 };
@@ -166,17 +166,16 @@ function drawProjectionSketch(ctx:CanvasRenderingContext2D,random:()=>number,wid
   const raw=[[-82,-59],[82,-43],[82,64],[-82,48]].map(([x,y])=>[planeCenter[0]+x,planeCenter[1]+y] as Point2);
   const network=raw.map(([x,y])=>[planeCenter[0]+(x-planeCenter[0])*.78+18,planeCenter[1]+(y-planeCenter[1])*.78+8] as Point2);
   const selected:Point2=[planeCenter[0]+27,planeCenter[1]-4];
+  const selectedNetwork:Point2=[planeCenter[0]+(selected[0]-planeCenter[0])*.78+18,planeCenter[1]+(selected[1]-planeCenter[1])*.78+8];
   roughRect(ctx,random,origin[0]-12,origin[1]-8,24,16,palette.ink,palette.ochre);dot(ctx,origin[0],origin[1],4,palette.ink,.9);inkLabel(ctx,"optical center O = [0,0,0]cam",origin[0]-18,origin[1]+28,palette.ink,"center");drawCameraAxes(ctx,random,origin);
-  if(step===0){roughPolygon(ctx,random,network,palette.blue,palette.blue,.055);inkLabel(ctx,"network plane p′=[u′,v′,1]",network[2][0],network[2][1]+18,palette.blue,"right");arrow(ctx,random,network[1][0]+8,network[1][1],raw[1][0]+10,raw[1][1]-18,palette.rust);inkLabel(ctx,"A⁻¹(p′−a)",raw[1][0]+15,raw[1][1]-22,palette.rust);}
-  roughPolygon(ctx,random,raw,palette.ochre,palette.ochre,.06);dot(ctx,selected[0],selected[1],6,palette.blue,.9);inkLabel(ctx,"raw pixel p=[u,v,1]",selected[0]+10,selected[1]-9,palette.blue);
-  raw.forEach(corner=>roughLine(ctx,random,origin[0],origin[1],corner[0],corner[1],palette.pencil,.7,.32));
-  arrow(ctx,random,origin[0]+8,origin[1]-3,planeCenter[0]-8,planeCenter[1]+3,palette.sage);inkLabel(ctx,"+z optical axis",(origin[0]+planeCenter[0])*.5,(origin[1]+planeCenter[1])*.5-12,palette.sage,"center");
-  if(step>=2){roughLine(ctx,random,origin[0],origin[1],objectCenter[0]+10,objectCenter[1]-2,palette.blue,1.7,.78);inkLabel(ctx,"r = K⁻¹p · direction only",(selected[0]+objectCenter[0])*.5,(selected[1]+objectCenter[1])*.5-14,palette.blue,"center");}
-  const boxW=128,boxH=94,dx=36,dy=-28;const front:[[number,number],[number,number],[number,number],[number,number]]=[[objectCenter[0]-boxW/2,objectCenter[1]-boxH/2],[objectCenter[0]+boxW/2,objectCenter[1]-boxH/2],[objectCenter[0]+boxW/2,objectCenter[1]+boxH/2],[objectCenter[0]-boxW/2,objectCenter[1]+boxH/2]];const back=front.map(([x,y])=>[x+dx,y+dy] as Point2);roughPolygon(ctx,random,front,palette.ink,undefined);roughPolygon(ctx,random,back,palette.ink,undefined);front.forEach((point,index)=>roughLine(ctx,random,point[0],point[1],back[index][0],back[index][1],palette.ink,1.2,.7));
+  if(step<=1){roughPolygon(ctx,random,network,palette.blue,palette.blue,.055);dot(ctx,selectedNetwork[0],selectedNetwork[1],6,palette.blue,.9);inkLabel(ctx,"network anchor p′=[u′,v′,1]",selectedNetwork[0]+10,selectedNetwork[1]+19,palette.blue);}
+  if(step===1){arrow(ctx,random,selectedNetwork[0]+8,selectedNetwork[1]-5,selected[0]+7,selected[1]-8,palette.rust);inkLabel(ctx,"A⁻¹(p′−a)",(selectedNetwork[0]+selected[0])*.5+9,(selectedNetwork[1]+selected[1])*.5-14,palette.rust,"center");}
+  if(step>=1){roughPolygon(ctx,random,raw,palette.ochre,palette.ochre,.06);dot(ctx,selected[0],selected[1],6,palette.rust,.9);inkLabel(ctx,"raw pixel p=[u,v,1]",selected[0]+10,selected[1]-9,palette.rust);raw.forEach(corner=>roughLine(ctx,random,origin[0],origin[1],corner[0],corner[1],palette.pencil,.7,.32));arrow(ctx,random,origin[0]+8,origin[1]-3,planeCenter[0]-8,planeCenter[1]+3,palette.sage);inkLabel(ctx,"+z optical axis",(origin[0]+planeCenter[0])*.5,(origin[1]+planeCenter[1])*.5-12,palette.sage,"center");}
+  if(step>=2){roughLine(ctx,random,origin[0],origin[1],objectCenter[0]+10,objectCenter[1]-2,palette.blue,1.7,.78);inkLabel(ctx,"r = K⁻¹p · direction only",(selected[0]+objectCenter[0])*.5,(selected[1]+objectCenter[1])*.5-14,palette.blue,"center");const boxW=128,boxH=94,dx=36,dy=-28;const front:[[number,number],[number,number],[number,number],[number,number]]=[[objectCenter[0]-boxW/2,objectCenter[1]-boxH/2],[objectCenter[0]+boxW/2,objectCenter[1]-boxH/2],[objectCenter[0]+boxW/2,objectCenter[1]+boxH/2],[objectCenter[0]-boxW/2,objectCenter[1]+boxH/2]];const back=front.map(([x,y])=>[x+dx,y+dy] as Point2);roughPolygon(ctx,random,front,palette.ink,undefined);roughPolygon(ctx,random,back,palette.ink,undefined);front.forEach((point,index)=>roughLine(ctx,random,point[0],point[1],back[index][0],back[index][1],palette.ink,1.2,.7));}
   if(showMetric){const t=(depth+1)/42,metric:Point2=[origin[0]+(objectCenter[0]-origin[0])*(.32+t*.52),origin[1]+(objectCenter[1]-origin[1])*(.32+t*.52)];for(let index=0;index<41;index+=1){const q=(index+1)/42,x=origin[0]+(objectCenter[0]-origin[0])*(.3+q*.57),y=origin[1]+(objectCenter[1]-origin[1])*(.3+q*.57);dot(ctx,x,y,index===depth?6:1.6,index===depth?palette.rust:palette.blue,index===depth?.95:.28);}dot(ctx,metric[0],metric[1],7,palette.rust,.92);inkLabel(ctx,`p_cam = d r · d=${depth+4}m`,metric[0]+12,metric[1]-10,palette.rust);}
 }
 
-function drawScene(ctx: CanvasRenderingContext2D, width: number, height: number, scene: NarrativeScene, progress: number, camera: number, depth: number, hits:HitRegion[], yaw:number, zoom:number, geometryStep:number, poolingMode:"sum"|"mean"|"max"|"bilinear",poolOffset:number,cameraPoses?:Array<{cam2ego:number[][]}>) {
+function drawScene(ctx: CanvasRenderingContext2D, width: number, height: number, scene: NarrativeScene, progress: number, camera: number, depth: number, hits:HitRegion[], yaw:number, zoom:number, geometryStep:number, poolingMode:"sum"|"mean"|"max"|"bilinear",poolOffset:number,cameraPoses?:Array<{cam2ego:number[][];cam2img:number[][];post_rot:number[][];post_trans:number[];name?:string}>) {
   viewYaw=yaw;viewZoom=zoom;
   const random = seeded(sceneSeed(scene.id));
   const cx = width * 0.5, cy = height * 0.52;
@@ -232,7 +231,24 @@ function drawScene(ctx: CanvasRenderingContext2D, width: number, height: number,
     drawProjectionSketch(ctx,random,width,height,depth,Math.max(2,geometryStep),true);
   } else if (scene.illustration === "ego-transform") {
     const s=Math.min(width,height)/18,baseY=cy+135;drawIsoGrid(ctx,random,cx+25,baseY,s,7);drawIsoCar(ctx,random,cx+25,baseY,s*.75);
-    (cameraPoses??[]).forEach((pose,index)=>{const m=pose.cam2ego,origin:Point3=[m[0][3],m[1][3],m[2][3]],axis:[number,number]=[m[0][2],m[1][2]],angle=Math.atan2(axis[1],axis[0]),o=drawFrustum3D(ctx,random,origin,angle,cx+25,baseY,s,index===camera);hits.push({kind:"camera",index,x:o[0],y:o[1],radius:24});if(index===camera){const xEnd=iso([origin[0]+m[0][0]*1.5,origin[1]+m[1][0]*1.5,origin[2]+m[2][0]*1.5],cx+25,baseY,s),yEnd=iso([origin[0]+m[0][1]*1.5,origin[1]+m[1][1]*1.5,origin[2]+m[2][1]*1.5],cx+25,baseY,s),zEnd=iso([origin[0]+m[0][2]*2.2,origin[1]+m[1][2]*2.2,origin[2]+m[2][2]*2.2],cx+25,baseY,s);arrow(ctx,random,o[0],o[1],xEnd[0],xEnd[1],palette.rust);arrow(ctx,random,o[0],o[1],yEnd[0],yEnd[1],palette.blue);arrow(ctx,random,o[0],o[1],zEnd[0],zEnd[1],palette.sage);inkLabel(ctx,"camera basis R",o[0]+10,o[1]-18,palette.blue);const distance=(depth+4)*.12,pCam:Point3=[origin[0]+m[0][2]*distance,origin[1]+m[1][2]*distance,origin[2]+m[2][2]*distance],pEgo=iso(pCam,cx+25,baseY,s);if(geometryStep>=3){dot(ctx,pEgo[0],pEgo[1],6,palette.rust,.9);inkLabel(ctx,"R p_cam + t",pEgo[0]+10,pEgo[1]-8,palette.rust);}}});
+    (cameraPoses??[]).forEach((pose,index)=>{
+      const m=pose.cam2ego,origin:Point3=[m[0][3],m[1][3],m[2][3]],axis:[number,number]=[m[0][2],m[1][2]],angle=Math.atan2(axis[1],axis[0]);
+      const o=drawFrustum3D(ctx,random,origin,angle,cx+25,baseY,s,index===camera);hits.push({kind:"camera",index,x:o[0],y:o[1],radius:24});
+      if(index!==camera)return;
+      const xEnd=iso([origin[0]+m[0][0]*1.5,origin[1]+m[1][0]*1.5,origin[2]+m[2][0]*1.5],cx+25,baseY,s),yEnd=iso([origin[0]+m[0][1]*1.5,origin[1]+m[1][1]*1.5,origin[2]+m[2][1]*1.5],cx+25,baseY,s),zEnd=iso([origin[0]+m[0][2]*2.2,origin[1]+m[1][2]*2.2,origin[2]+m[2][2]*2.2],cx+25,baseY,s);
+      arrow(ctx,random,o[0],o[1],xEnd[0],xEnd[1],palette.rust);arrow(ctx,random,o[0],o[1],yEnd[0],yEnd[1],palette.blue);arrow(ctx,random,o[0],o[1],zEnd[0],zEnd[1],palette.sage);inkLabel(ctx,"camera basis R",o[0]+10,o[1]-18,palette.blue);
+      const uPrime=351*11/21,vPrime=127*4/7,u=(uPrime-pose.post_trans[0])/pose.post_rot[0][0],v=(vPrime-pose.post_trans[1])/pose.post_rot[1][1],d=depth+4,k=pose.cam2img;
+      const pCam:Point3=[(u-k[0][2])/k[0][0]*d,(v-k[1][2])/k[1][1]*d,d];
+      const delta:Point3=[m[0][0]*pCam[0]+m[0][1]*pCam[1]+m[0][2]*pCam[2],m[1][0]*pCam[0]+m[1][1]*pCam[1]+m[1][2]*pCam[2],m[2][0]*pCam[0]+m[2][1]*pCam[1]+m[2][2]*pCam[2]],pEgo:Point3=[origin[0]+delta[0],origin[1]+delta[1],origin[2]+delta[2]];
+      const compression=Math.min(1,6.5/Math.hypot(delta[0],delta[1],delta[2])),displayPoint:Point3=[origin[0]+delta[0]*compression,origin[1]+delta[1]*compression,origin[2]+delta[2]*compression],display=iso(displayPoint,cx+25,baseY,s);
+      roughLine(ctx,random,o[0],o[1],display[0],display[1],palette.rust,2,.82);dot(ctx,display[0],display[1],7,palette.rust,.92);
+      inkLabel(ctx,"same physical point",display[0]+9,display[1]-8,palette.rust);
+      const noteX=width*.63,noteY=height*.19,noteW=Math.min(300,width*.36);roughRect(ctx,random,noteX,noteY,noteW,88,palette.pencil,palette.ochre);
+      inkLabel(ctx,`${pose.name?.replace("CAM_","")??"CAMERA"} · selected d=${d}m`,noteX+12,noteY+18,palette.ink);
+      inkLabel(ctx,`p_cam = [${pCam.map(value=>value.toFixed(2)).join(", ")}] m`,noteX+12,noteY+39,palette.blue);
+      inkLabel(ctx,`R p_cam + t = [${pEgo.map(value=>value.toFixed(2)).join(", ")}] m`,noteX+12,noteY+60,palette.rust);
+      if(compression<1)inkLabel(ctx,"ray compressed on page · numbers exact",noteX+12,noteY+79,palette.pencil);
+    });
     const ego=iso([0,0,.6],cx+25,baseY,s),egoX=iso([2.2,0,.6],cx+25,baseY,s),egoY=iso([0,2.2,.6],cx+25,baseY,s);arrow(ctx,random,ego[0],ego[1],egoX[0],egoX[1],palette.rust);arrow(ctx,random,ego[0],ego[1],egoY[0],egoY[1],palette.blue);inkLabel(ctx,"ego frame",ego[0]-8,ego[1]+20,palette.ink,"center");
   } else if (scene.illustration === "splat") {
     const cell=Math.min(57,height*.085),gridX=width*.44,gridY=height*.19,values=[.25,.55,.9];for(let row=0;row<6;row+=1)for(let col=0;col<6;col+=1)roughRect(ctx,random,gridX+col*cell,gridY+row*cell,cell,cell,palette.pencil);
