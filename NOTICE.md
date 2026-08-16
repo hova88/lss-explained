@@ -14,6 +14,10 @@ MMDetection3D source is Apache-2.0 licensed. This repository does not copy MMDet
 
 The official Lift-Splat-Shoot source is distributed under the NVIDIA Source Code License and the pretrained checkpoint is a separate NVIDIA artifact. Neither source nor checkpoint is committed here. The reproduction script downloads them into ignored `.cache/` storage and commits only derived numerical/visual evidence. Use of those inputs remains governed by NVIDIA's license and is intended here for non-commercial research and evaluation.
 
+## BEVDepth
+
+The official BEVDepth implementation is MIT licensed. This repository does not copy its source or distribute a BEVDepth checkpoint. The lesson cites and paraphrases the paper and inspects the official implementation to explain camera-aware depth prediction, sparse LiDAR depth-target construction and the combined detection/depth loss. All displayed checkpoint rasters remain explicitly identified as LSS outputs.
+
 ## Paper
 
 Paper text, figures, and tables remain copyright their authors/publisher. This site paraphrases the method and reproduces small numerical facts needed for technical commentary; it does not redistribute the paper.

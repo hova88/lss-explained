@@ -1,81 +1,136 @@
-# Lift-Splat-Shoot source notes
+# LSS and BEVDepth source notes
 
-These notes accompany the interactive essay at **LSS Explained**. They separate four kinds of evidence that are easy to blur together when reading a visual explanation:
+These notes accompany **LSS Explained v10**. The lesson follows one tensor through ten scenes, then uses BEVDepth to expose the part of the original LSS design that is easiest to misunderstand: how the depth branch is trained.
 
-- **PAPER** — claims, equations and experiments reported in the ECCV 2020 paper.
-- **OFFICIAL CODE** — behavior visible in the pinned NVIDIA implementation.
-- **CHECKPOINT** — tensors exported from the official `model525000.pt` checkpoint for the pinned nuScenes sample.
-- **REAL SAMPLE** — nuScenes images, calibration, boxes and a single LiDAR scan used only for spatial verification.
-- **TEACHING** — a reconstruction that explains an equation when the official repository did not release a corresponding trained artifact.
+The site keeps five evidence classes separate:
 
-## 1. The task
+- **LSS PAPER / LSS CODE** — claims or behavior in the ECCV 2020 paper and pinned NVIDIA implementation.
+- **BEVDEPTH PAPER / BEVDEPTH CODE** — the explicit depth-learning extension reported by BEVDepth and implemented in its official repository.
+- **CHECKPOINT** — tensors exported from the official LSS `model525000.pt` checkpoint for the pinned nuScenes sample.
+- **REAL SAMPLE** — nuScenes images, calibration, boxes and one LiDAR scan used to audit spatial alignment.
+- **TEACHING** — a deterministic diagram or comparison, never presented as trained-model output.
 
-Lift-Splat-Shoot consumes a set of calibrated camera images and predicts a raster in the vehicle’s ego frame. The public checkpoint used by this site performs vehicle semantic segmentation over a 100 m × 100 m region at 0.5 m per cell, producing raw logits shaped `[B,1,200,200]`.
+## 1. The problem and the tensor path
 
-The camera set is not a stitched panorama. Every image travels with its own intrinsics `K`, camera-to-ego rotation `R`, translation `t`, and image post-transform. The model is designed so camera order does not matter when images and calibration are permuted together.
-
-## 2. Image preprocessing and CamEncode
-
-For the pinned validation frame, each 1600 × 900 camera image is resized and cropped to 352 × 128. `post_rot` and `post_trans` remember how a pixel moved. ImageNet normalization changes RGB values but not pixel geometry.
-
-All cameras share EfficientNet-B0 weights. The image encoder merges batch and camera dimensions, extracts multiscale features, and emits 105 channels on an 8 × 22 grid: 41 depth logits plus 64 context channels.
-
-The 8 × 22 frustum anchors come from `linspace(0,351,22)` and `linspace(0,127,8)`. They should not be replaced with assumed 16-pixel block centers.
-
-## 3. Lift
-
-At one feature anchor, the first 41 channels are softmax-normalized over depth. The remaining 64 values form a context vector. Their outer product creates a 41 × 64 lifted feature:
+LSS consumes calibrated camera images and predicts a raster in the vehicle's ego frame. In the pinned configuration the path is:
 
 ```text
-f[d,c] = softmax(depth_logits)[d] × context[c]
+[B,6,3,128,352] camera images
+→ [B,6,105,8,22] CamEncode output
+→ split into [B,6,41,8,22] depth logits and [B,6,64,8,22] context
+→ [B,6,41,8,22,64] lifted frustum features
+→ 43,296 metric candidates per batch item
+→ [B,64,200,200] pooled BEV
+→ [B,1,200,200] LSS vehicle logits
 ```
 
-Original LSS has no ground-truth depth loss. These weights are a latent, task-oriented allocation learned through the final BEV objective. They may be broad or multimodal and should not automatically be interpreted as calibrated physical depth probabilities.
+This is not panorama stitching. Each image keeps its own intrinsics, camera-to-ego pose and image post-transform. Geometry makes the six tensors commensurable before a BEV CNN reasons over their neighborhoods.
 
-## 4. Exact geometry
+## 2. Depth distribution and context payload
 
-The official geometry sequence is:
+CamEncode shares EfficientNet-B0 weights across cameras and emits 105 channels at every 8 × 22 anchor. The first 41 channels are softmax-normalized depth logits; the remaining 64 values are context features.
+
+The distinction matters. Depth answers **where along this ray should evidence be placed?** Context answers **what evidence should be carried there?** Lift is their broadcast outer product:
 
 ```text
-network anchor
-→ undo post transform
-→ form [d·u, d·v, d]
-→ multiply by K⁻¹
-→ rotate camera→ego
-→ add camera→ego translation
+F3d[b,n,d,h,w,c] = softmax(D)[b,n,d,h,w] × C[b,n,c,h,w]
 ```
 
-With column vectors:
+The operation copies one context vector to all 41 depth hypotheses and gates each copy by its depth weight. It does not first select a single point. In original LSS, these weights are latent allocations optimized only through the final task loss; they are not directly supervised metric-depth probabilities.
+
+The 8 × 22 anchors are the official frustum samples: `linspace(0,351,22)` and `linspace(0,127,8)`. They are not assumed 16-pixel block centers.
+
+## 3. From network pixel to camera ray
+
+The site separates four objects that informal diagrams often collapse:
+
+1. the optical center `O = [0,0,0]` in camera coordinates;
+2. the augmented network anchor `p' = [u',v',1]`;
+3. the raw homogeneous image point `p = [u,v,1]`;
+4. the metric camera point `p_cam = [x,y,z]`.
+
+The official sequence first undoes image augmentation:
 
 ```text
-p_ego = R_cam→ego K⁻¹ [d·A⁻¹(u′−a), d]ᵀ + t_cam→ego
+[u,v] = A⁻¹([u',v'] - a)
 ```
 
-The camera optical axis is the third column of the camera-to-ego rotation matrix. The interactive frustums are built from the four image corners unprojected with the real intrinsics; they are not decorative cones.
+Then the inverse intrinsic matrix converts the raw pixel into a direction ratio:
 
-LiDAR-to-camera deserves a separate warning. The pinned direct matrix includes the ego-pose chain between the LiDAR timestamp and each camera timestamp. In general it is not equal to the static shortcut `inverse(cam2ego) × lidar2ego`.
+```text
+r = K⁻¹[u,v,1]ᵀ = [(u-cx)/fx, (v-cy)/fy, 1]ᵀ
+```
 
-## 5. Splat
+Finally a sampled metric depth scales that ray:
 
-Six cameras, 41 depth bins and an 8 × 22 feature grid produce 43,296 candidate points before bounds filtering. Ego coordinates are quantized into the half-open grid `[-50,50)` with 0.5 m cells.
+```text
+p_cam(d) = d r = K⁻¹[du,dv,d]ᵀ
+```
 
-Voxel indices are encoded as ranks and sorted. `QuickCumsum` uses prefix sums, retains group-ending entries and differences neighboring group totals. Its result exactly matches naïve sum pooling while avoiding an explicit sparse tensor operation.
+For nuScenes camera coordinates, `+x` points image-right, `+y` image-down and `+z` along the optical axis. The interactive diagram uses the real intrinsic matrix and labels every intermediate tensor rather than treating a pixel as an already-metric 3D point.
 
-The pooled tensor is first arranged as `[B,C,Z,X,Y]`. The published configuration has one vertical voxel, so collapsing `Z` produces `[B,64,200,200]`.
+## 4. Camera coordinates into ego coordinates
 
-## 6. BEV learning and inference
+For each camera, nuScenes calibration provides a rigid transform with rotation `R_cam→ego` and optical-center translation `t_cam→ego`:
 
-`BevEncode` is a ResNet-18-style multiscale network. Geometry decides where evidence lands; the BEV network supplies neighborhood context and outputs task logits.
+```text
+p_ego = R_cam→ego p_cam + t_cam→ego
+```
 
-Training applies `BCEWithLogitsLoss` only at the final BEV output. Gradients pass backward through the BEV encoder, sum pooling, outer product, latent depth softmax and image encoder. The paper describes object positive weight 1.0, while the public training script defaults to 2.13; the site keeps that discrepancy explicit.
+With column vectors, transforms compose right-to-left. The optical axis in ego coordinates is the third column of `R_cam→ego`; the site constructs each frustum from the four image corners and that real axis. This prevents the common visual error of drawing a camera cone toward the vehicle.
 
-Official IoU evaluation uses `logits > 0`, which is exactly equivalent to `sigmoid(logit) > 0.5`. The segmentation model stops there. It has no 3D box decoder, NMS, tracker or velocity estimator.
+The complete LSS geometry is therefore:
 
-## 7. The truth lab
+```text
+p_ego(d) = R_cam→ego K⁻¹[d·A⁻¹(p'−a), d]ᵀ + t_cam→ego
+```
 
-The six images and BEV heatmap should not resemble one another. Perspective pixels are distributed over depth, transformed into ego coordinates and summed with evidence from other cameras. Two-dimensional camera silhouettes are not preserved.
+The direct LiDAR-to-camera matrices in the fixed demo also include the ego-pose chain between different sensor timestamps. In general they are not the static shortcut `inverse(cam2ego) × lidar2ego`.
 
-The pinned 34,688-point LiDAR scan is therefore shown as an independent ruler. LiDAR is never passed into the checkpoint. A selected point keeps one ID while the site shows its LiDAR coordinate, ego coordinate, camera projection and BEV cell.
+## 5. Splat and collision semantics
+
+Six cameras × 41 depth bins × 8 × 22 anchors produce 43,296 candidates before bounds filtering. Metric ego coordinates are quantized into the half-open 0.5 m grid `[-50,50)`:
+
+```text
+ix = floor((x + 50) / 0.5)
+iy = floor((y + 50) / 0.5)
+```
+
+Multiple candidates can collide in the same BEV cell. Original LSS uses **sum pooling**. It encodes voxel indices as ranks, sorts candidates, computes prefix sums, retains group ends, then differences adjacent group totals. `QuickCumsum` is an efficient implementation of exactly the same sum reduction, not a different aggregation rule.
+
+The lesson lets the reader compare sum, mean, max and bilinear splatting. Mean changes density semantics, max discards all but the strongest feature, and bilinear splatting distributes a candidate across four neighboring cells. These alternatives are labeled teaching comparisons; the pinned LSS result uses hard-cell sum pooling.
+
+## 6. BEV encoding in LSS
+
+The pooled tensor is arranged as `[B,C,Z,X,Y]`. The published configuration has one vertical voxel, so collapsing `Z` yields `[B,64,200,200]`. A ResNet-18-style `BevEncode` network supplies spatial context and produces task logits.
+
+For the official LSS vehicle-segmentation task, training applies `BCEWithLogitsLoss` at the final BEV output. Gradients travel backward through `BevEncode`, sum pooling, Lift, the latent depth softmax and the image encoder. The paper describes positive weight 1.0 while the public training script defaults to 2.13; this discrepancy remains explicit in the lesson.
+
+Official evaluation uses `logit > 0`, equivalent to `sigmoid(logit) > 0.5`. That model has no 3D box decoder, NMS, tracker or velocity estimator.
+
+## 7. What BEVDepth changes
+
+BEVDepth retains the same conceptual Lift equation `F3d = F2d ⊗ Dpred`, but changes how the depth branch receives learning signal.
+
+Its training data preparation projects LiDAR points into each camera using the calibrated ego-to-camera transform and intrinsics, rejects points behind the camera or outside the image, downsamples sparse depth by taking the minimum nonzero depth in each block, discretizes that depth into a bin, and creates a one-hot target. Binary cross entropy is evaluated only at pixels with a valid foreground depth target.
+
+The official experiment code combines losses as:
+
+```text
+L = L_detection + 3 L_depth
+```
+
+Thus LSS asks the final task to discover a useful latent depth allocation, whereas BEVDepth adds a direct metric-depth gradient. LiDAR is used to construct training targets, not as an inference input; inference remains camera-only.
+
+BEVDepth also conditions its DepthNet with a 27-dimensional camera parameter vector containing intrinsics and augmentation/extrinsic terms. Squeeze-and-excitation gates the context and depth branches with that camera-aware signal. Its larger depth receptive field and efficient voxel-pooling implementation are additional engineering changes; they should not be confused with the conceptual change in supervision.
+
+The public checkpoint audited by this website is LSS vehicle segmentation. The BEVDepth comparison is sourced from its paper and code and is never presented as a BEVDepth checkpoint result.
+
+## 8. Truth-lab orientation and evidence
+
+Camera images and a BEV heatmap should not resemble each other pixel-for-pixel. Lift distributes perspective evidence over depth, rigid transforms move it into ego coordinates, Splat merges cameras, and the BEV encoder adds spatial context. Correct correspondence is object- and coordinate-based, not silhouette-based.
+
+The fixed 34,688-point LiDAR scan is an independent ruler for LSS. A selected point keeps one ID across its LiDAR coordinate, ego coordinate, camera projection and BEV cell. It is marked **REAL SAMPLE / REFERENCE LIDAR**, never an LSS input.
 
 The display contract is:
 
@@ -83,25 +138,15 @@ The display contract is:
 ego +x = vehicle forward = screen up
 ego +y = vehicle left    = screen left
 ego +z = up
-ix = floor((x + 50) / 0.5)
-iy = floor((y + 50) / 0.5)
+screenX = 1 - (iy + 0.5) / 200
+screenY = 1 - (ix + 0.5) / 200
 ```
-
-## 8. Robustness and Shoot
-
-The paper evaluates camera dropout, calibration noise and unseen camera arrangements. Robustness improves when matching perturbations are included during training; explicit geometry does not make the model automatically immune to broken calibration.
-
-For vehicle segmentation on nuScenes, the paper reports IoU 24.25 for the CNN baseline, 26.83 for Frozen Encoder, 30.05 for OFT and 32.07 for Lift-Splat.
-
-Shoot is a separate planning task. A learned BEV cost field scores 1,000 trajectory templates and produces a Boltzmann distribution over them. The official repository did not release a planning checkpoint, so the site labels its trajectory experiment as **TEACHING**, not checkpoint output.
-
-## Visual interaction references
-
-The linked BEV laboratory borrows a functional idea from Waymo's rider-facing visualization: establish trust with a stable ego symbol, restrained metric context, nearby objects and one legible motion cue instead of exposing every internal signal at once. See Google Design's [Taming the Road](https://design.google/library/trusting-driverless-cars/) and Waymo's note on [in-car displays](https://waymo.com/blog/2021/04/waymos-fully-autonomous-ride-hailing-service-has-new-features/). This essay keeps its own field-notebook palette and never implies that its LSS tensors are Waymo production outputs.
 
 ## Primary references
 
 - Jonah Philion and Sanja Fidler, *Lift, Splat, Shoot: Encoding Images from Arbitrary Camera Rigs by Implicitly Unprojecting to 3D*, ECCV 2020.
-- NVIDIA official implementation pinned to commit `2903467c91ee9c12f0917a12c22ab1f04e607ae0`.
-- OpenMMLab nuScenes demo data pinned to commit `fe25f7a51d36e3702f961e198894580d83c4387b`.
-- See `EVIDENCE.md`, `COVERAGE.md` and `NOTICE.md` in the repository for hashes, licensing boundaries and the full audit trail.
+- Yinhao Li et al., *BEVDepth: Acquisition of Reliable Depth for Multi-view 3D Object Detection*, AAAI 2023.
+- NVIDIA LSS implementation pinned to `2903467c91ee9c12f0917a12c22ab1f04e607ae0`.
+- Official BEVDepth implementation inspected at `d78c7b58b10b9ada940462ba83ab24d99cae5833`.
+- OpenMMLab nuScenes demo data pinned to `fe25f7a51d36e3702f961e198894580d83c4387b`.
+- See `EVIDENCE.md`, `COVERAGE.md` and `NOTICE.md` for hashes, licensing boundaries and audit details.

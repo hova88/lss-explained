@@ -8,6 +8,10 @@ type IllustrationStageProps = {
   progress: number;
   selectedCamera: number;
   depthIndex: number;
+  geometryStep: number;
+  poolingMode: "sum" | "mean" | "max" | "bilinear";
+  poolOffset: number;
+  cameraPoses?: Array<{cam2ego:number[][]}>;
   onCameraSelect?: (index:number)=>void;
   onDepthSelect?: (index:number)=>void;
 };
@@ -125,15 +129,6 @@ function drawIsoCar(ctx:CanvasRenderingContext2D,random:()=>number,cx:number,cy:
   const forward=iso([0,2.45,.48],cx,cy,scale);arrow(ctx,random,origin[0],origin[1],forward[0],forward[1],palette.rust);
 }
 
-function drawVoxel(ctx:CanvasRenderingContext2D,random:()=>number,center:Point3,size:Point3,cx:number,cy:number,scale:number,color=palette.rust,alpha=.055) {
-  const [x,y,z]=center,[sx,sy,sz]=size;
-  const points:Point3[]=[[-sx,-sy,0],[sx,-sy,0],[sx,sy,0],[-sx,sy,0],[-sx,-sy,sz],[sx,-sy,sz],[sx,sy,sz],[-sx,sy,sz]].map(([dx,dy,dz])=>[x+dx,y+dy,z+dz]);
-  const screen=points.map(point=>iso(point,cx,cy,scale));
-  roughPolygon(ctx,random,[screen[0],screen[1],screen[2],screen[3]],color,color,alpha);
-  roughPolygon(ctx,random,[screen[4],screen[5],screen[6],screen[7]],color,color,alpha*1.4);
-  for(let index=0;index<4;index+=1)roughLine(ctx,random,screen[index][0],screen[index][1],screen[index+4][0],screen[index+4][1],color,.75,.34);
-}
-
 function drawSpatialCamera(ctx:CanvasRenderingContext2D,random:()=>number,from:Point2,to:Point2,selected=false) {
   roughRect(ctx,random,from[0]-8,from[1]-6,16,12,selected?palette.rust:palette.ink,selected?palette.rust:palette.ochre);
   const dx=to[0]-from[0],dy=to[1]-from[1],length=Math.hypot(dx,dy)||1,nx=-dy/length,ny=dx/length;
@@ -161,7 +156,27 @@ function drawFrustum3D(ctx:CanvasRenderingContext2D,random:()=>number,origin:Poi
   return o;
 }
 
-function drawScene(ctx: CanvasRenderingContext2D, width: number, height: number, scene: NarrativeScene, progress: number, camera: number, depth: number, hits:HitRegion[], yaw:number, zoom:number) {
+function drawCameraAxes(ctx:CanvasRenderingContext2D,random:()=>number,origin:Point2,scale=58) {
+  arrow(ctx,random,origin[0],origin[1],origin[0]+scale,origin[1]+12,palette.rust);inkLabel(ctx,"+x right",origin[0]+scale+5,origin[1]+15,palette.rust);
+  arrow(ctx,random,origin[0],origin[1],origin[0]-8,origin[1]+scale,palette.blue);inkLabel(ctx,"+y down",origin[0]-3,origin[1]+scale+14,palette.blue,"center");
+}
+
+function drawProjectionSketch(ctx:CanvasRenderingContext2D,random:()=>number,width:number,height:number,depth:number,step:number,showMetric=false) {
+  const origin:Point2=[width*.43,height*.56],planeCenter:Point2=[width*.62,height*.42],objectCenter:Point2=[width*.82,height*.27];
+  const raw=[[-82,-59],[82,-43],[82,64],[-82,48]].map(([x,y])=>[planeCenter[0]+x,planeCenter[1]+y] as Point2);
+  const network=raw.map(([x,y])=>[planeCenter[0]+(x-planeCenter[0])*.78+18,planeCenter[1]+(y-planeCenter[1])*.78+8] as Point2);
+  const selected:Point2=[planeCenter[0]+27,planeCenter[1]-4];
+  roughRect(ctx,random,origin[0]-12,origin[1]-8,24,16,palette.ink,palette.ochre);dot(ctx,origin[0],origin[1],4,palette.ink,.9);inkLabel(ctx,"optical center O = [0,0,0]cam",origin[0]-18,origin[1]+28,palette.ink,"center");drawCameraAxes(ctx,random,origin);
+  if(step===0){roughPolygon(ctx,random,network,palette.blue,palette.blue,.055);inkLabel(ctx,"network plane p′=[u′,v′,1]",network[2][0],network[2][1]+18,palette.blue,"right");arrow(ctx,random,network[1][0]+8,network[1][1],raw[1][0]+10,raw[1][1]-18,palette.rust);inkLabel(ctx,"A⁻¹(p′−a)",raw[1][0]+15,raw[1][1]-22,palette.rust);}
+  roughPolygon(ctx,random,raw,palette.ochre,palette.ochre,.06);dot(ctx,selected[0],selected[1],6,palette.blue,.9);inkLabel(ctx,"raw pixel p=[u,v,1]",selected[0]+10,selected[1]-9,palette.blue);
+  raw.forEach(corner=>roughLine(ctx,random,origin[0],origin[1],corner[0],corner[1],palette.pencil,.7,.32));
+  arrow(ctx,random,origin[0]+8,origin[1]-3,planeCenter[0]-8,planeCenter[1]+3,palette.sage);inkLabel(ctx,"+z optical axis",(origin[0]+planeCenter[0])*.5,(origin[1]+planeCenter[1])*.5-12,palette.sage,"center");
+  if(step>=2){roughLine(ctx,random,origin[0],origin[1],objectCenter[0]+10,objectCenter[1]-2,palette.blue,1.7,.78);inkLabel(ctx,"r = K⁻¹p · direction only",(selected[0]+objectCenter[0])*.5,(selected[1]+objectCenter[1])*.5-14,palette.blue,"center");}
+  const boxW=128,boxH=94,dx=36,dy=-28;const front:[[number,number],[number,number],[number,number],[number,number]]=[[objectCenter[0]-boxW/2,objectCenter[1]-boxH/2],[objectCenter[0]+boxW/2,objectCenter[1]-boxH/2],[objectCenter[0]+boxW/2,objectCenter[1]+boxH/2],[objectCenter[0]-boxW/2,objectCenter[1]+boxH/2]];const back=front.map(([x,y])=>[x+dx,y+dy] as Point2);roughPolygon(ctx,random,front,palette.ink,undefined);roughPolygon(ctx,random,back,palette.ink,undefined);front.forEach((point,index)=>roughLine(ctx,random,point[0],point[1],back[index][0],back[index][1],palette.ink,1.2,.7));
+  if(showMetric){const t=(depth+1)/42,metric:Point2=[origin[0]+(objectCenter[0]-origin[0])*(.32+t*.52),origin[1]+(objectCenter[1]-origin[1])*(.32+t*.52)];for(let index=0;index<41;index+=1){const q=(index+1)/42,x=origin[0]+(objectCenter[0]-origin[0])*(.3+q*.57),y=origin[1]+(objectCenter[1]-origin[1])*(.3+q*.57);dot(ctx,x,y,index===depth?6:1.6,index===depth?palette.rust:palette.blue,index===depth?.95:.28);}dot(ctx,metric[0],metric[1],7,palette.rust,.92);inkLabel(ctx,`p_cam = d r · d=${depth+4}m`,metric[0]+12,metric[1]-10,palette.rust);}
+}
+
+function drawScene(ctx: CanvasRenderingContext2D, width: number, height: number, scene: NarrativeScene, progress: number, camera: number, depth: number, hits:HitRegion[], yaw:number, zoom:number, geometryStep:number, poolingMode:"sum"|"mean"|"max"|"bilinear",poolOffset:number,cameraPoses?:Array<{cam2ego:number[][]}>) {
   viewYaw=yaw;viewZoom=zoom;
   const random = seeded(sceneSeed(scene.id));
   const cx = width * 0.5, cy = height * 0.52;
@@ -211,15 +226,28 @@ function drawScene(ctx: CanvasRenderingContext2D, width: number, height: number,
     drawSpatialCamera(ctx,random,origin,end,true);roughLine(ctx,random,origin[0],origin[1],end[0],end[1],palette.rust,1.6,.8);
     for(let index=0;index<41;index+=1){const t=(index+1)/42,x=origin[0]+(end[0]-origin[0])*t,y=origin[1]+(end[1]-origin[1])*t,peak=Math.exp(-1*((index-depth)/5)**2),radius=scene.illustration==="lift"?1.8+peak*7:index===depth?6.5:1.7;dot(ctx,x,y,radius,index===depth?palette.rust:palette.blue,scene.illustration==="lift"?.22+peak*.68:.46);hits.push({kind:"depth",index,x,y,radius:9});}
     if(scene.illustration==="lift")for(let index=0;index<9;index+=1){const t=.25+index*.055,x=origin[0]+(end[0]-origin[0])*t,y=origin[1]+(end[1]-origin[1])*t;wash(ctx,random,x,y,18+index*2,10+index,palette.blue,.025);}
-  } else if (scene.illustration === "geometry") {
-    const s=Math.min(width,height)/18,baseY=cy+95;drawIsoGrid(ctx,random,cx,baseY,s,7);const frames:[Point3,string][]=[[[-5,-2,2.7],palette.ochre],[[-1,-1,2.1],palette.blue],[[2,1,1.4],palette.rust],[[5,3,.25],palette.sage]];
-    frames.forEach(([point,color],index)=>{const center=iso(point,cx,baseY,s),x=iso([point[0]+1,point[1],point[2]],cx,baseY,s),y=iso([point[0],point[1]+1,point[2]],cx,baseY,s),z=iso([point[0],point[1],point[2]+1],cx,baseY,s);dot(ctx,center[0],center[1],index===frames.length-1?7:4,color,.82);roughLine(ctx,random,center[0],center[1],x[0],x[1],palette.rust,.85,.6);roughLine(ctx,random,center[0],center[1],y[0],y[1],palette.blue,.85,.6);roughLine(ctx,random,center[0],center[1],z[0],z[1],palette.sage,.85,.6);inkLabel(ctx,["network pixel","raw pixel + d","camera point","ego point"][index],center[0]+8,center[1]-9,color);if(index<frames.length-1){const next=iso(frames[index+1][0],cx,baseY,s);arrow(ctx,random,center[0]+10,center[1],next[0]-10,next[1],palette.pencil);}});drawIsoCar(ctx,random,cx,baseY,s*.72);
+  } else if (scene.illustration === "image-ray") {
+    drawProjectionSketch(ctx,random,width,height,depth,geometryStep,false);
+  } else if (scene.illustration === "camera-point") {
+    drawProjectionSketch(ctx,random,width,height,depth,Math.max(2,geometryStep),true);
+  } else if (scene.illustration === "ego-transform") {
+    const s=Math.min(width,height)/18,baseY=cy+135;drawIsoGrid(ctx,random,cx+25,baseY,s,7);drawIsoCar(ctx,random,cx+25,baseY,s*.75);
+    (cameraPoses??[]).forEach((pose,index)=>{const m=pose.cam2ego,origin:Point3=[m[0][3],m[1][3],m[2][3]],axis:[number,number]=[m[0][2],m[1][2]],angle=Math.atan2(axis[1],axis[0]),o=drawFrustum3D(ctx,random,origin,angle,cx+25,baseY,s,index===camera);hits.push({kind:"camera",index,x:o[0],y:o[1],radius:24});if(index===camera){const xEnd=iso([origin[0]+m[0][0]*1.5,origin[1]+m[1][0]*1.5,origin[2]+m[2][0]*1.5],cx+25,baseY,s),yEnd=iso([origin[0]+m[0][1]*1.5,origin[1]+m[1][1]*1.5,origin[2]+m[2][1]*1.5],cx+25,baseY,s),zEnd=iso([origin[0]+m[0][2]*2.2,origin[1]+m[1][2]*2.2,origin[2]+m[2][2]*2.2],cx+25,baseY,s);arrow(ctx,random,o[0],o[1],xEnd[0],xEnd[1],palette.rust);arrow(ctx,random,o[0],o[1],yEnd[0],yEnd[1],palette.blue);arrow(ctx,random,o[0],o[1],zEnd[0],zEnd[1],palette.sage);inkLabel(ctx,"camera basis R",o[0]+10,o[1]-18,palette.blue);const distance=(depth+4)*.12,pCam:Point3=[origin[0]+m[0][2]*distance,origin[1]+m[1][2]*distance,origin[2]+m[2][2]*distance],pEgo=iso(pCam,cx+25,baseY,s);if(geometryStep>=3){dot(ctx,pEgo[0],pEgo[1],6,palette.rust,.9);inkLabel(ctx,"R p_cam + t",pEgo[0]+10,pEgo[1]-8,palette.rust);}}});
+    const ego=iso([0,0,.6],cx+25,baseY,s),egoX=iso([2.2,0,.6],cx+25,baseY,s),egoY=iso([0,2.2,.6],cx+25,baseY,s);arrow(ctx,random,ego[0],ego[1],egoX[0],egoX[1],palette.rust);arrow(ctx,random,ego[0],ego[1],egoY[0],egoY[1],palette.blue);inkLabel(ctx,"ego frame",ego[0]-8,ego[1]+20,palette.ink,"center");
   } else if (scene.illustration === "splat") {
-    const s=Math.min(width,height)/18,baseY=cy+135;drawIsoGrid(ctx,random,cx,baseY,s,7);for(let index=0;index<70;index+=1){const gx=-5+Math.floor(random()*10),gy=-5+Math.floor(random()*10),z=1.4+random()*5.4,point=iso([gx+random()*.8,gy+random()*.8,z],cx,baseY,s),ground=iso([gx+.5,gy+.5,.08],cx,baseY,s);dot(ctx,point[0],point[1],1.6+random()*1.8,palette.blue,.45);roughLine(ctx,random,point[0],point[1],ground[0],ground[1],palette.blue,index%9===0?.9:.4,index%9===0?.38:.1);if(index%13===0){drawVoxel(ctx,random,[gx+.5,gy+.5,.05],[.48,.48,2.7],cx,baseY,s,palette.rust,.045);wash(ctx,random,ground[0],ground[1],18,10,palette.rust,.11);}}drawIsoCar(ctx,random,cx,baseY,s*.68);inkLabel(ctx,"irregular lifted points",cx+120,cy-145,palette.blue);inkLabel(ctx,"sum inside each pillar",cx+170,cy+105,palette.rust);
+    const cell=Math.min(57,height*.085),gridX=width*.44,gridY=height*.19,values=[.25,.55,.9];for(let row=0;row<6;row+=1)for(let col=0;col<6;col+=1)roughRect(ctx,random,gridX+col*cell,gridY+row*cell,cell,cell,palette.pencil);
+    const fixed=[[2.24,2.3],[2.62,2.68]],moving=[2.1+poolOffset*1.65,2.47] as [number,number],points=[...fixed,moving] as [number,number][];
+    const hardX=Math.floor(moving[0]),hardY=Math.floor(moving[1]),result=poolingMode==="sum"?values.reduce((a,b)=>a+b,0):poolingMode==="mean"?values.reduce((a,b)=>a+b,0)/values.length:Math.max(...values);
+    if(poolingMode!=="bilinear"){wash(ctx,random,gridX+(hardX+.5)*cell,gridY+(hardY+.5)*cell,cell*.45,cell*.43,poolingMode==="max"?palette.rust:palette.ochre,.16+.13*result);inkLabel(ctx,`${poolingMode} = ${result.toFixed(2)}`,gridX+(hardX+.5)*cell,gridY+(hardY+.5)*cell+4,palette.rust,"center");}else{const fx=moving[0]-hardX,fy=moving[1]-hardY,weights=[[0,0,(1-fx)*(1-fy)],[1,0,fx*(1-fy)],[0,1,(1-fx)*fy],[1,1,fx*fy]];weights.forEach(([dx,dy,w])=>{wash(ctx,random,gridX+(hardX+dx+.5)*cell,gridY+(hardY+dy+.5)*cell,cell*.44,cell*.42,palette.ochre,.08+.25*w);inkLabel(ctx,w.toFixed(2),gridX+(hardX+dx+.5)*cell,gridY+(hardY+dy+.5)*cell+4,palette.rust,"center");});}
+    points.forEach(([px,py],index)=>{const x=gridX+px*cell,y=gridY+py*cell;dot(ctx,x,y,7,index===2?palette.rust:palette.blue,.9);inkLabel(ctx,`f${index+1}=${values[index]}`,x+9,y-7,index===2?palette.rust:palette.blue);if(poolingMode!=="bilinear"){const tx=gridX+(Math.floor(px)+.5)*cell,ty=gridY+(Math.floor(py)+.5)*cell;arrow(ctx,random,x,y+8,tx,ty-10,palette.pencil);}});
+    inkLabel(ctx,"continuous ego XY",gridX,gridY-16,palette.blue);inkLabel(ctx,"floor → integer cell",gridX+6*cell,gridY+6*cell+20,palette.rust,"right");
   } else if (scene.illustration === "truth") {
     const s=Math.min(width,height)/18,baseY=cy+120;drawIsoGrid(ctx,random,cx,baseY,s,7);for(let index=0;index<18;index+=1){const point=iso([-5+random()*10,-5+random()*10,.05],cx,baseY,s);wash(ctx,random,point[0],point[1],13+random()*25,7+random()*13,index%3?palette.rust:palette.ochre,.055+random()*.08);}if(scene.illustration==="truth")for(let index=0;index<360;index+=1){const point=iso([-6+random()*12,-6+random()*12,.12+random()*.35],cx,baseY,s);dot(ctx,point[0],point[1],.6+random()*1.2,index%4?palette.blue:palette.sage,.32);}drawIsoCar(ctx,random,cx,baseY,s*.72);
   } else if (scene.illustration === "learning") {
-    const s=Math.min(width,height)/18,baseY=cy+150;drawIsoGrid(ctx,random,cx,baseY,s,6);const layers=[0.15,1.5,2.85,4.2];layers.forEach((z,index)=>{const plane=[[-4,-3,z],[4,-3,z],[4,3,z],[-4,3,z]].map(point=>iso(point as Point3,cx,baseY,s));roughPolygon(ctx,random,plane,index===layers.length-1?palette.rust:palette.blue,index===layers.length-1?palette.rust:palette.blue,.04+index*.018);inkLabel(ctx,["pooled BEV","BEV context","multiscale fusion","vehicle logits"][index],plane[2][0]+8,plane[2][1],index===layers.length-1?palette.rust:palette.blue);if(index<layers.length-1){const a=iso([4,0,z+.2],cx,baseY,s),b=iso([4,0,layers[index+1]-.2],cx,baseY,s);arrow(ctx,random,a[0],a[1],b[0],b[1],palette.rust);}});const backwardA=iso([-4,0,4],cx,baseY,s),backwardB=iso([-4,0,.35],cx,baseY,s);arrow(ctx,random,backwardA[0],backwardA[1],backwardB[0],backwardB[1],palette.blue);inkLabel(ctx,"BCE gradient",backwardA[0]-8,(backwardA[1]+backwardB[1])*.5,palette.blue,"right");
+    const split=width*.67,top=height*.19,rowGap=64,left=width*.42;roughLine(ctx,random,split,top-28,split,height*.78,palette.pencil,.8,.35);inkLabel(ctx,"LSS · indirect depth",left,top-14,palette.rust);inkLabel(ctx,"BEVDepth · explicit depth",split+24,top-14,palette.blue);
+    const lss=["BEV target","task BCE","BEV Encoder","Splat","α × context","Depth logits"];lss.forEach((label,index)=>{const y=top+index*rowGap*.82,boxX=left;roughRect(ctx,random,boxX,y,125,28,index===5?palette.blue:palette.rust,index===5?palette.blue:palette.rust);inkLabel(ctx,label,boxX+62,y+18,index===5?palette.blue:palette.rust,"center");if(index<lss.length-1)arrow(ctx,random,boxX+62,y+31,boxX+62,y+rowGap*.82-4,palette.pencil);});inkLabel(ctx,"gradient travels through the task",left+140,top+135,palette.rust);
+    const right=split+22,camY=top+18;roughRect(ctx,random,right,camY,92,62,palette.ink,palette.ochre);for(let index=0;index<18;index+=1)dot(ctx,right+8+random()*76,camY+8+random()*46,1.5,index%3?palette.blue:palette.sage,.65);inkLabel(ctx,"LiDAR → image",right+46,camY+78,palette.blue,"center");
+    const ops=["min nonzero / block","depth bin","one-hot Dgt","masked BCE","Depth logits"];ops.forEach((label,index)=>{const x=right+130+(index%2)*128,y=top+(index<2?0:index<4?94:188);roughRect(ctx,random,x,y,112,31,index===4?palette.rust:palette.blue,index===4?palette.rust:palette.blue);inkLabel(ctx,label,x+56,y+20,index===4?palette.rust:palette.blue,"center");if(index<ops.length-1){const nx=right+130+((index+1)%2)*128,ny=top+((index+1)<2?0:(index+1)<4?94:188);arrow(ctx,random,x+112,y+15,nx-5,ny+15,palette.pencil);}});inkLabel(ctx,"training only · camera-only inference",right+130,top+260,palette.sage);
   } else {
     const s=Math.min(width,height)/18,baseY=cy+145;drawIsoGrid(ctx,random,cx,baseY,s,7);for(let pathIndex=0;pathIndex<7;pathIndex+=1){const path=Array.from({length:20},(_,point)=>iso([(pathIndex-3)*.025*point**1.65,point*.42-1,.2],cx,baseY,s));path.slice(1).forEach((point,index)=>roughLine(ctx,random,path[index][0],path[index][1],point[0],point[1],pathIndex===3?palette.rust:palette.blue,pathIndex===3?2.5:.9,pathIndex===3?.9:.28));}drawIsoCar(ctx,random,cx,baseY,s*.72);
   }
@@ -243,13 +271,13 @@ export function IllustrationStage(props: IllustrationStageProps) {
       if (!ctx) return;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       hitsRef.current=[];
-      drawScene(ctx, rect.width, rect.height, props.scene, props.progress, props.selectedCamera, props.depthIndex,hitsRef.current,view.yaw,view.zoom);
+      drawScene(ctx, rect.width, rect.height, props.scene, props.progress, props.selectedCamera, props.depthIndex,hitsRef.current,view.yaw,view.zoom,props.geometryStep,props.poolingMode,props.poolOffset,props.cameraPoses);
     };
     const observer = new ResizeObserver(render);
     observer.observe(canvas);
     render();
     return () => observer.disconnect();
-  }, [props.scene, props.progress, props.selectedCamera, props.depthIndex,view]);
+  }, [props.scene, props.progress, props.selectedCamera, props.depthIndex,props.geometryStep,props.poolingMode,props.poolOffset,props.cameraPoses,view]);
 
   return (
     <div className="illustration-stage">

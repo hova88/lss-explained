@@ -8,9 +8,11 @@ import { IllustrationStage } from "./IllustrationStage";
 import { SCENES, sceneIndexFromHash, type LabId } from "./lss-content";
 
 type BevMode = "probability" | "threshold" | "gt" | "errors" | "lidar" | "contributors";
+type PoolingMode = "sum" | "mean" | "max" | "bilinear";
 type SceneCamera = { cam2img:number[][]; cam2ego:number[][]; lidar2cam:number[][] };
 type Trajectory = { name:string; points:[number,number][]; cost:number; probability:number };
 const CAMERA_NAMES=["CAM_FRONT_LEFT","CAM_FRONT","CAM_FRONT_RIGHT","CAM_BACK_RIGHT","CAM_BACK","CAM_BACK_LEFT"];
+const GEOMETRY_DEFAULTS:Record<string,number>={"image-to-ray":2,"ray-to-camera":3,"camera-to-ego":4};
 
 type EncodedArray = { shape:number[]; dtype:string; data:string };
 type CameraRecord = SceneCamera & { name:string; image:string; network_image:string; post_rot:number[][]; post_trans:number[]; timestamp:number; augmentation:{resize:number;resize_dims:number[];crop:number[]} };
@@ -44,6 +46,7 @@ function StoryStep({ index }:{index:number}) {
       <p className="scene-reveal">{scene.reveal}</p>
       <p className="scene-question">{scene.question}</p>
       <p className="scene-explanation">{scene.explanation}</p>
+      {scene.comparison&&<div className="method-contrast"><span><b>LSS</b>{scene.comparison.lss}</span><span><b>BEVDepth</b>{scene.comparison.bevdepth}</span></div>}
       <code className="scene-formula">{scene.formula}</code>
       <footer><EvidenceTag value={scene.evidence} /><span>{scene.source}</span></footer>
     </article>
@@ -101,6 +104,7 @@ export default function LssExplainer() {
   const [activeScene,setActiveScene]=useState(0),[progress,setProgress]=useState(1),[contentsOpen,setContentsOpen]=useState(false),[playing,setPlaying]=useState(false),[labOpen,setLabOpen]=useState(false);
   const [rig,setRig]=useState<Rig|null>(null),[features,setFeatures]=useState<Features|null>(null),[model,setModel]=useState<Model|null>(null);
   const [selectedCamera,setSelectedCamera]=useState(1),[depthIndex,setDepthIndex]=useState(15);
+  const [geometryStep,setGeometryStep]=useState(2),[poolingMode,setPoolingMode]=useState<PoolingMode>("sum"),[poolOffset,setPoolOffset]=useState(.34);
   const [bevMode,setBevMode]=useState<BevMode>("probability"),[threshold,setThreshold]=useState(.5),[bevOpacity,setBevOpacity]=useState(.82),[rawGrid,setRawGrid]=useState(false);
   const [enabled,setEnabled]=useState<boolean[]>(Array(6).fill(true)),[yaw,setYaw]=useState(0),[temperature,setTemperature]=useState(.8),[selectedTrajectory,setSelectedTrajectory]=useState(0);
 
@@ -108,11 +112,11 @@ export default function LssExplainer() {
     fetch(asset("/data/rig.json")).then((response)=>response.json()),fetch(asset("/data/model-features.json")).then((response)=>response.json()),fetch(asset("/data/model-artifacts.json")).then((response)=>response.json())
   ]).then(([rigData,featuresData,modelData])=>{setRig(rigData);setFeatures(featuresData);setModel(modelData);}).catch((error)=>console.error("Evidence assets failed",error));},[]);
 
-  useEffect(()=>{const frame=requestAnimationFrame(()=>setActiveScene(sceneIndexFromHash(location.hash)));return()=>cancelAnimationFrame(frame);},[]);
+  useEffect(()=>{const frame=requestAnimationFrame(()=>{const initial=sceneIndexFromHash(location.hash);setActiveScene(initial);setGeometryStep(GEOMETRY_DEFAULTS[SCENES[initial].id]??2);});return()=>cancelAnimationFrame(frame);},[]);
 
-  const go=useCallback((index:number)=>{const next=Math.max(0,Math.min(SCENES.length-1,index));setActiveScene(next);setProgress(0);setLabOpen(false);setContentsOpen(false);history.replaceState(null,"",`#${SCENES[next].id}`);requestAnimationFrame(()=>setProgress(1));},[]);
+  const go=useCallback((index:number)=>{const next=Math.max(0,Math.min(SCENES.length-1,index));setActiveScene(next);setGeometryStep(GEOMETRY_DEFAULTS[SCENES[next].id]??2);setProgress(0);setLabOpen(false);setContentsOpen(false);history.replaceState(null,"",`#${SCENES[next].id}`);requestAnimationFrame(()=>setProgress(1));},[]);
   useEffect(()=>{const handler=(event:KeyboardEvent)=>{if(event.key==="Escape")setContentsOpen(false);if(event.key==="ArrowDown"||event.key==="ArrowRight"){event.preventDefault();go(activeScene+1);}if(event.key==="ArrowUp"||event.key==="ArrowLeft"){event.preventDefault();go(activeScene-1);}};addEventListener("keydown",handler);return()=>removeEventListener("keydown",handler);},[activeScene,go]);
-  useEffect(()=>{if(!playing)return;const timer=setInterval(()=>setActiveScene(current=>{const next=(current+1)%SCENES.length;history.replaceState(null,"",`#${SCENES[next].id}`);setProgress(0);requestAnimationFrame(()=>setProgress(1));return next;}),6500);return()=>clearInterval(timer);},[playing]);
+  useEffect(()=>{if(!playing)return;const timer=setInterval(()=>setActiveScene(current=>{const next=(current+1)%SCENES.length;setGeometryStep(GEOMETRY_DEFAULTS[SCENES[next].id]??2);history.replaceState(null,"",`#${SCENES[next].id}`);setProgress(0);requestAnimationFrame(()=>setProgress(1));return next;}),6500);return()=>clearInterval(timer);},[playing]);
 
   const allDepth=useMemo(()=>decodeFloat(features?.depth_probabilities),[features]);
   const depth=useMemo(()=>Array.from({length:41},(_,d)=>allDepth?.[selectedCamera*41*8*22+d*8*22+4*22+11]??0),[allDepth,selectedCamera]);
@@ -124,22 +128,27 @@ export default function LssExplainer() {
   const stats=useMemo(()=>probability&&groundTruth?binaryStats(Array.from(probability),Array.from(groundTruth),threshold):null,[probability,groundTruth,threshold]);
   const trajectories=useMemo<Trajectory[]>(()=>{const paths=Array.from({length:9},(_,index)=>Array.from({length:21},(_,sample)=>{const y=sample*.72;return[(index-4)*.017*y*y,y] as [number,number];}));const map=([x,y]:[number,number])=>.055*Math.abs(x)+.85*Math.exp(-((x-2.3)**2+(y-9)**2)/5)+.5*Math.exp(-((x+1.4)**2+(y-13)**2)/3),costs=paths.map((path)=>trajectoryCost(path,map,.14)),probabilities=boltzmannProbabilities(costs,temperature);return costs.map((cost,index)=>({name:index===costs.indexOf(Math.min(...costs))?"minimum cost":`template ${index+1}`,points:paths[index],cost,probability:probabilities[index]})).sort((a,b)=>a.cost-b.cost);},[temperature]);
   const scene=SCENES[activeScene];
+  const geometryScene=["image-to-ray","ray-to-camera","camera-to-ego"].includes(scene.id);
+  const poolCopy:Record<PoolingMode,{operation:string;detail:string;formula:string}>={sum:{operation:"grouped SUM",detail:"preserves accumulated evidence · official LSS",formula:"Σ fᵢ"},mean:{operation:"grouped MEAN",detail:"normalizes away contributor count · comparison",formula:"Σ fᵢ / n"},max:{operation:"channel-wise MAX",detail:"keeps the strongest response · comparison",formula:"maxᵢ fᵢ"},bilinear:{operation:"4-neighbor weighted SPLAT",detail:"smoothly spreads one candidate · comparison",formula:"Σ wᵢⱼ fᵢ"}};
+  const tensor=scene.id==="splat-pooling"?{...scene.tensor,operation:poolCopy[poolingMode].operation,detail:poolCopy[poolingMode].detail}:scene.tensor;
 
   const activeLab=scene.lab==="geometry"?<GeometryLab rig={rig} selectedCamera={selectedCamera} setSelectedCamera={setSelectedCamera} depth={depth} depthIndex={depthIndex} setDepthIndex={setDepthIndex} />:scene.lab==="bev"?<BevLab rig={rig} selectedCamera={selectedCamera} setSelectedCamera={setSelectedCamera} bevMode={bevMode} setBevMode={setBevMode} threshold={threshold} setThreshold={setThreshold} opacity={bevOpacity} setOpacity={setBevOpacity} rawGrid={rawGrid} setRawGrid={setRawGrid} stats={stats} activeVariant={activeVariant} />:scene.lab==="robustness"?<RobustnessLab rig={rig} selectedCamera={selectedCamera} setSelectedCamera={setSelectedCamera} enabled={enabled} setEnabled={setEnabled} yaw={yaw} setYaw={setYaw} trajectories={trajectories} selectedTrajectory={selectedTrajectory} setSelectedTrajectory={setSelectedTrajectory} temperature={temperature} setTemperature={setTemperature} />:null;
 
   return <main className={`visual-essay scene-${activeScene} ${labOpen?"lab-open":""}`}>
-    <header className="essay-header"><a href={asset("/")}><span>LSS</span><b>EXPLAINED</b><sup>v9</sup></a><div><button onClick={()=>setContentsOpen(!contentsOpen)} aria-expanded={contentsOpen}><Menu />Contents</button><a href={asset("/articles/lift-splat-shoot-source-notes.md")}>Source notes</a><a href="https://github.com/hova88/lss-explained">GitHub ↗</a></div></header>
-    {contentsOpen&&<nav className="contents-drawer" aria-label="Table of contents"><button className="drawer-close" onClick={()=>setContentsOpen(false)}><X /></button><p>FIELD INDEX · 12 SCENES</p>{SCENES.map((item,index)=><button key={item.id} className={index===activeScene?"active":""} onClick={()=>go(index)}><span>{String(index+1).padStart(2,"0")}</span><b>{item.title}</b><small>{item.act}</small></button>)}</nav>}
+    <header className="essay-header"><a href={asset("/")}><span>LSS</span><b>EXPLAINED</b><sup>v10</sup></a><div><button onClick={()=>setContentsOpen(!contentsOpen)} aria-expanded={contentsOpen}><Menu />Contents</button><a href={asset("/articles/lift-splat-shoot-source-notes.md")}>Source notes</a><a href="https://github.com/hova88/lss-explained">GitHub ↗</a></div></header>
+    {contentsOpen&&<nav className="contents-drawer" aria-label="Table of contents"><button className="drawer-close" onClick={()=>setContentsOpen(false)}><X /></button><p>FIELD INDEX · 10 SCENES</p>{SCENES.map((item,index)=><button key={item.id} className={index===activeScene?"active":""} onClick={()=>go(index)}><span>{String(index+1).padStart(2,"0")}</span><b>{item.title}</b><small>{item.act}</small></button>)}</nav>}
 
     <section className="persistent-stage" aria-live="polite">
-      <IllustrationStage scene={scene} progress={progress} selectedCamera={selectedCamera} depthIndex={depthIndex} onCameraSelect={setSelectedCamera} onDepthSelect={setDepthIndex} />
+      <IllustrationStage scene={scene} progress={progress} selectedCamera={selectedCamera} depthIndex={depthIndex} geometryStep={geometryStep} poolingMode={poolingMode} poolOffset={poolOffset} cameraPoses={rig?.cameras} onCameraSelect={setSelectedCamera} onDepthSelect={setDepthIndex} />
       <StoryStep index={activeScene} />
-      <aside className="lecture-note"><b>{String(activeScene+1).padStart(2,"0")}.</b><span>{scene.steps[activeScene%3].text}</span></aside>
+      {scene.id!=="encoder-supervision"&&<aside className="lecture-note"><b>{String(activeScene+1).padStart(2,"0")}.</b><span>{scene.steps[activeScene%3].text}</span></aside>}
       <div className="tensor-ledger" aria-label="Tensor operation for this scene">
-        <code>{scene.tensor.input}</code>
-        <span><b>{scene.tensor.operation}</b><small>{scene.tensor.detail}</small></span>
-        <code>{scene.tensor.output}</code>
+        <code>{tensor.input}</code>
+        <span><b>{tensor.operation}</b><small>{tensor.detail}</small></span>
+        <code>{tensor.output}</code>
       </div>
+      {geometryScene&&<div className="stage-control frame-control"><small>TRACE THE SAME SAMPLE</small><div>{["p′ network","p raw","ray r","p camera","p ego"].map((label,index)=><button key={label} className={geometryStep===index?"active":""} onClick={()=>setGeometryStep(index)}>{index}<span>{label}</span></button>)}</div></div>}
+      {scene.id==="splat-pooling"&&<div className="stage-control pool-control"><small>COLLISION RULE · <b>{poolCopy[poolingMode].formula}</b></small><div>{(["sum","mean","max","bilinear"] as PoolingMode[]).map(mode=><button key={mode} className={poolingMode===mode?"active":""} onClick={()=>setPoolingMode(mode)}>{mode}</button>)}</div><label>move candidate<input type="range" min="0" max="1" step=".01" value={poolOffset} onChange={event=>setPoolOffset(Number(event.target.value))} /></label></div>}
       <div className="gesture-note">DRAG TO ROTATE · SCROLL TO ZOOM · CLICK CAMERA OR DEPTH</div>
       {scene.lab&&<button className="lab-toggle" onClick={()=>setLabOpen(!labOpen)}>{labOpen?"Close evidence":"Open evidence"}</button>}
     </section>

@@ -8,7 +8,7 @@ import {
   float16LittleEndianToFloat32,
   mat3Multiply, mat4Multiply, mat4Vector, nearestFeatureAnchor, projectLidarPoint,
   quaternionToRotation, screenToBevIndex,
-  naiveSumPool, outerProduct, poolCameraContributions, quickCumsum, softmax,
+  bilinearSplatWeights, naiveSumPool, outerProduct, poolCameraContributions, quickCumsum, reduceFeatureGroup, softmax,
   trajectoryCost, transformPointSet, voxelIndex, voxelRank,
 } from "../lib/algorithm.mjs";
 
@@ -48,6 +48,16 @@ test("QuickCumsum teaching implementation equals naive sum pooling", () => {
   const features = [[1, 4], [8, 2], [3, 1], [-2, 5], [1, 1]];
   const ranks = [7, 2, 7, 2, 9];
   assert.deepEqual(quickCumsum(features, ranks), naiveSumPool(features, ranks));
+});
+
+test("interactive pooling comparisons preserve their stated semantics",()=>{
+  const features=[[.25,1],[.55,-2],[.9,.5]];
+  assert.deepEqual(reduceFeatureGroup(features,"sum"),[1.7000000000000002,-.5]);
+  assert.deepEqual(reduceFeatureGroup(features,"mean"),[1.7000000000000002/3,-.5/3]);
+  assert.deepEqual(reduceFeatureGroup(features,"max"),[.9,1]);
+  const weights=bilinearSplatWeights(2.25,3.6);
+  close(weights.reduce((sum,item)=>sum+item.weight,0),1);
+  assert.deepEqual(weights.map(item=>item.index),[[2,3],[3,3],[2,4],[3,4]]);
 });
 
 test("camera pooling is permutation invariant", () => {
@@ -156,22 +166,26 @@ test("pinned alignment contract and LiDAR binary are internally consistent",asyn
   assert.ok(alignment.camera_projections.every(row=>row.visible_points>1000&&row.rotation_orthogonality_max_error<1e-6));
 });
 
-test("v9 public experience is English-only and defines twelve tensor-first spatial-ink scenes",async()=>{
+test("v10 public experience is English-only and defines ten LSS/BEVDepth tensor scenes",async()=>{
   const [content,explainer,layout]=await Promise.all([
     readFile(new URL("../app/lss-content.ts",import.meta.url),"utf8"),
     readFile(new URL("../app/LssExplainer.tsx",import.meta.url),"utf8"),
     readFile(new URL("../app/layout.tsx",import.meta.url),"utf8"),
   ]);
   const source=`${content}\n${explainer}\n${layout}`;
-  assert.equal((content.match(/id:\s*\"[a-z-]+\"/g)??[]).length,12);
+  assert.equal((content.match(/id:\s*\"[a-z-]+\"/g)??[]).length,10);
   assert.equal(/[\u3400-\u9fff]/u.test(source),false);
   assert.equal(/type\s+Locale|Localized|setLanguage|language-switch/.test(source),false);
   assert.ok(layout.includes('<html lang="en">'));
   assert.equal(/LssScene|@react-three|from ["']three["']|Open 3D|calibrated WebGL/.test(source),false);
-  assert.equal((content.match(/explanation:\s*"/g)??[]).length,12);
-  assert.equal((content.match(/tensor:\s*\{/g)??[]).length,12);
-  assert.ok(content.split("\n").filter(line=>/explanation:\s*"/.test(line)).every(line=>line.length<390));
+  assert.equal((content.match(/explanation:\s*"/g)??[]).length,10);
+  assert.equal((content.match(/tensor:\s*\{/g)??[]).length,10);
+  assert.ok(content.split("\n").filter(line=>/explanation:\s*"/.test(line)).every(line=>line.length<560));
   assert.ok(explainer.includes("lesson-timeline"));
   assert.ok(explainer.includes("tensor-ledger"));
+  assert.ok(explainer.includes("frame-control"));
+  assert.ok(explainer.includes("pool-control"));
+  assert.ok(content.includes("get_downsampled_gt_depth()"));
+  assert.ok(content.includes("L=Ldet+3Ldepth"));
   assert.ok(explainer.includes("DRAG TO ROTATE"));
 });

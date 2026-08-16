@@ -7,6 +7,7 @@ All browser-visible model results are reproducible derivatives of pinned inputs.
 | Input | Revision / SHA-256 |
 |---|---|
 | Official LSS repository | `2903467c91ee9c12f0917a12c22ab1f04e607ae0` |
+| Official BEVDepth repository inspected for the comparison | `d78c7b58b10b9ada940462ba83ab24d99cae5833` |
 | OpenMMLab MMDetection3D demo | `fe25f7a51d36e3702f961e198894580d83c4387b` |
 | `model525000.pt` | `4543030a339face9facb5651eb8f29add3407f8c7108f9eb21b0f8bceec921a0` |
 | Demo pickle | `5ced892a1c939de17b9df1c2719684f84e0103096c2f689761631d1c34fb0ac8` |
@@ -35,6 +36,8 @@ nuScenes sample token: `ca9a282c9e77460f8360f564131a8af5`.
 - LiDAR binary shape `[34688,5]`, six positive-depth/in-image projection counts, BEV occupancy counts, sensor time deltas, and direct-vs-static transform residuals.
 - Every camera rotation has determinant ≈1 and orthogonality error below `1e-6`.
 
+These export assertions apply to the pinned LSS checkpoint. No BEVDepth checkpoint tensor is bundled or implied. BEVDepth claims in the lesson are source-level evidence from its paper and official implementation: the outer-product view transformer, LiDAR-projected sparse depth targets, minimum-nonzero block downsampling, one-hot depth bins, valid-pixel BCE, 27D camera-aware conditioning, and `L_detection + 3 L_depth` in the official nuScenes experiment.
+
 The artifact schema-v2 model contract hash is `5ad419e2468bdded5ee88a779734a4664a37d5d415cf81ffb995c31f6e9b52de`; the full depth/context contract hash is `6580cf96932f02633c501ad0da03c525ef0a12ad2059235d08205fef5e705936`; the alignment contract hash is `db98b14c5a01f4f81c05f69fcb93495ec3ff75f4bb186c7157345fb27dd5a503`.
 
 ## Evidence labels
@@ -42,5 +45,6 @@ The artifact schema-v2 model contract hash is `5ad419e2468bdded5ee88a779734a4664
 - `official-checkpoint-derived`: computed by the pinned model and checkpoint.
 - `nuscenes-annotation-derived`: rasterized from pinned sample annotations and calibration.
 - `pinned-lidar-and-calibration-derived`: raw fixed LiDAR frame plus deterministic projections and occupancy calculations.
-- `paper`: transcribed result or claim from the ECCV 2020 paper.
+- `lss-paper` / `lss-code`: claim or behavior from the pinned original LSS sources.
+- `bevdepth-paper` / `bevdepth-code`: comparison grounded in the official BEVDepth paper or implementation, never checkpoint output.
 - `teaching`: deterministic explanatory construction, never presented as trained-model output.

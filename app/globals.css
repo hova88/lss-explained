@@ -220,13 +220,17 @@ input[type="range"] { width: 100%; accent-color: var(--rust); }
 .illustration-stage { z-index: 1; }
 .illustration-stage canvas { cursor: grab; }
 .illustration-stage canvas:active { cursor: grabbing; }
-.story-step { position: absolute; z-index: 6; top: 28px; left: 30px; width: min(400px,34vw); min-height: 0; display: block; padding: 0; background: transparent; opacity: 1; }
+.story-step { position: absolute; z-index: 6; top: 22px; left: 30px; width: min(440px,36vw); min-height: 0; display: block; padding: 0; background: transparent; opacity: 1; }
 .story-step:after,.step-index,.scene-handoff,.scroll-cue { display: none; }
 .act-label { margin: 0 0 15px; font: 400 17px/1.2 Newsreader,serif; letter-spacing: 0; text-transform: none; }
-.story-step h2 { max-width: 440px; margin: 0 0 12px; font-size: clamp(52px,5vw,78px); line-height: .92; }
-.scene-reveal { max-width: 390px; margin: 0 0 9px; font: 500 clamp(17px,1.55vw,22px)/1.28 Newsreader,serif; }
+.story-step h2 { max-width: 440px; margin: 0 0 10px; font-size: clamp(42px,4vw,58px); line-height: .92; text-wrap:balance; }
+.scene-reveal { max-width: 410px; margin: 0 0 8px; font: 500 clamp(16px,1.45vw,20px)/1.25 Newsreader,serif; }
 .scene-question { max-width: 370px; margin: 0 0 10px; padding: 0; border: 0; color: var(--rust); font: 500 8px/1.35 DM Mono,monospace; letter-spacing: .04em; text-transform: uppercase; }
-.scene-explanation { max-width: 370px; margin: 0 0 13px; font: 400 12px/1.55 Manrope,sans-serif; }
+.scene-explanation { max-width: 405px; margin: 0 0 10px; font: 400 11.5px/1.48 Manrope,sans-serif; }
+.method-contrast { display:grid; grid-template-columns:1fr 1fr; gap:7px; max-width:405px; margin:0 0 8px; }
+.method-contrast span { display:grid; gap:3px; padding:7px 8px; border-top:1px solid var(--line); color:var(--muted); font:400 7px/1.42 DM Mono,monospace; }
+.method-contrast b { color:var(--rust); font:500 6px/1 DM Mono,monospace; letter-spacing:.08em; text-transform:uppercase; }
+.method-contrast span:last-child b { color:var(--blue); }
 .scene-formula { display: inline-block; max-width: 380px; margin: 0; padding: 8px 10px 7px; background: rgba(243,236,222,.72); font-size: 8px; backdrop-filter: blur(4px); }
 .story-step footer { max-width: 380px; margin-top: 10px; padding-top: 8px; }
 .lecture-note { position: absolute; z-index: 6; right: 34px; top: 56%; width: 240px; display: grid; grid-template-columns: 25px 1fr; gap: 8px; color: var(--ink); transform: rotate(-2deg); font: 600 17px/1.25 Caveat,cursive; }
@@ -241,6 +245,14 @@ input[type="range"] { width: 100%; accent-color: var(--rust); }
 .tensor-ledger>span:before { left:5px; }.tensor-ledger>span:after { right:5px; }
 .tensor-ledger b { font:500 7px/1.3 DM Mono,monospace; letter-spacing:.05em; text-transform:uppercase; }
 .tensor-ledger small { color:var(--muted); font:600 11px/1 Caveat,cursive; }
+.stage-control { position:absolute; z-index:8; right:25px; bottom:80px; width:min(430px,48vw); display:grid; gap:7px; padding:8px 10px; border-block:1px solid var(--line); background:rgba(243,236,222,.82); backdrop-filter:blur(5px); }
+.stage-control small { color:var(--muted); font:500 6px/1.3 DM Mono,monospace; letter-spacing:.09em; }
+.stage-control small b { color:var(--rust); font-weight:500; }
+.stage-control>div { display:flex; gap:5px; }
+.stage-control button { flex:1; min-width:0; border:1px solid var(--line); padding:6px 5px; background:transparent; color:var(--muted); cursor:pointer; font:500 6px/1 DM Mono,monospace; text-transform:uppercase; }
+.stage-control button span { display:block; margin-top:3px; font-size:5px; text-transform:none; }
+.stage-control button.active { border-color:var(--rust); background:rgba(195,94,60,.1); color:var(--rust); }
+.pool-control label { display:grid; grid-template-columns:auto 1fr; align-items:center; gap:9px; color:var(--muted); font:500 6px/1 DM Mono,monospace; }
 .lab-toggle { position:absolute; z-index:7; right:30px; bottom:20px; border:1px solid var(--ink); padding:8px 11px; background:rgba(251,246,235,.86); cursor:pointer; font:500 7px/1 DM Mono,monospace; letter-spacing:.08em; text-transform:uppercase; }
 .lab-toggle:hover { background:var(--ink); color:var(--paper); }
 .sketch-note.note-a { top:10%; right:8%; }
@@ -251,7 +263,7 @@ input[type="range"] { width: 100%; accent-color: var(--rust); }
 .lesson-timeline>button:disabled { opacity:.2; cursor:default; }
 .lesson-timeline svg { width:17px; height:17px; }
 .play-control { width:36px;height:36px;border:1px solid var(--ink)!important;border-radius:50%!important; }
-.lesson-timeline>div { display:grid; grid-template-columns:repeat(12,1fr); align-items:start; height:48px; }
+.lesson-timeline>div { display:grid; grid-template-columns:repeat(10,1fr); align-items:start; height:48px; }
 .lesson-timeline>div button { position:relative; height:48px; border:0; border-top:1px solid rgba(35,39,36,.35); padding:0; background:transparent; cursor:pointer; }
 .lesson-timeline>div button i { position:absolute; top:-4px; left:50%; width:7px;height:7px;border:1px solid var(--ink);border-radius:50%;background:var(--paper); transform:translateX(-50%); }
 .lesson-timeline>div button span { position:absolute; top:13px; left:50%; width:98px; opacity:0; transform:translateX(-50%); font:600 11px/1 Caveat,cursive; pointer-events:none; }
@@ -269,6 +281,8 @@ input[type="range"] { width: 100%; accent-color: var(--rust); }
   .story-step h2 { max-width:330px; font-size:46px; }
   .scene-reveal { max-width:310px; font-size:17px; }
   .scene-explanation { max-width:300px; font-size:10.5px; line-height:1.48; }
+  .method-contrast { max-width:310px; gap:4px; }
+  .method-contrast span { padding:5px; font-size:6px; }
   .scene-formula { max-width:300px; font-size:7px; }
   .story-step footer { display:none; }
   .lecture-note { right:15px; top:auto; bottom:67px; width:180px; font-size:14px; }
@@ -278,6 +292,10 @@ input[type="range"] { width: 100%; accent-color: var(--rust); }
   .tensor-ledger>span { padding:6px 13px; }
   .tensor-ledger b { font-size:5.5px; }
   .tensor-ledger small { display:none; }
+  .stage-control { right:10px; bottom:66px; width:calc(100% - 20px); padding:6px; }
+  .stage-control small,.pool-control label { font-size:5px; }
+  .stage-control button { padding:5px 2px; font-size:5px; }
+  .stage-control button span { display:none; }
   .lab-toggle { right:12px; bottom:28px; padding:6px 8px; }
   .lesson-timeline { height:58px; grid-template-columns:29px 34px 1fr 29px; gap:3px; padding:0 7px; }
   .play-control { width:31px;height:31px; }

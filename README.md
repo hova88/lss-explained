@@ -1,10 +1,10 @@
 # LSS Explained — from pixels to BEV
 
-An English-only, source-audited visual lesson about the original ECCV 2020 **Lift, Splat, Shoot** architecture. Twelve spatial-ink scenes follow one question—how six perspective images become one metric BEV—while a persistent tensor ledger names every reshape, split, softmax, broadcast, transform, pooling and decoding operation.
+An English-only, source-audited advanced visual lesson about **Lift, Splat, Shoot** and the depth-learning correction introduced by **BEVDepth**. Ten spatial-ink scenes follow every tensor from perspective image features to metric BEV while separating geometry, aggregation, supervision and task decoding.
 
 **Live:** https://hova88.github.io/lss-explained/
 
-This is the camera-to-BEV companion to [pointpillars-explained](https://github.com/hova88/pointpillars-explained). Version 9 uses a Feynman-style progression: establish the missing dimension, separate **where** from **what**, perform the outer product, restore metric geometry, then pool and learn in BEV. The same rotatable spatial whiteboard carries the course so each new tensor axis has a visible geometric meaning. The pinned 34,688-point LiDAR scan is reference evidence only and is never passed into LSS inference.
+This is the camera-to-BEV companion to [pointpillars-explained](https://github.com/hova88/pointpillars-explained). Version 10 is written for readers who already know the vocabulary and want to understand the mechanism: depth distribution versus context payload, broadcast Lift, the full image→ray→camera→ego chain, collision reductions, and the different gradient paths in LSS and BEVDepth. The pinned 34,688-point LiDAR scan is reference evidence for LSS and a visual reconstruction of BEVDepth's training-time depth-target process; it is never passed into the pinned LSS checkpoint.
 
 ## Course path
 
@@ -17,17 +17,19 @@ N images + K,R,t
 → pillar sum + QuickCumsum
 → [B,64,200,200] BEV tensor
 → BevEncode + vehicle logits
-→ BCE supervision / sigmoid + threshold
+→ LSS: final BEV BCE only
+→ BEVDepth: detection loss + 3 × sparse depth BCE
+→ camera-only inference
 ```
 
-The public checkpoint performs BEV vehicle semantic segmentation. It does not decode 3D boxes, run NMS, track objects or estimate velocity. Shoot is presented as a paper-equation teaching reconstruction because the official repository did not publish its planning checkpoint.
+The public checkpoint audited by this site is the official LSS vehicle-segmentation model. BEVDepth discussion is grounded in its paper and official code; the site does not present LSS mask results as BEVDepth detection results.
 
 ## Evidence boundary
 
 - **REAL SAMPLE** — calibration, images, a reference LiDAR scan and annotations from sample `ca9a282c9e77460f8360f564131a8af5`.
 - **CHECKPOINT** — tensors and rasters exported by strictly loading the pinned official checkpoint.
-- **PAPER** — metrics and experimental claims reported in the ECCV 2020 paper.
-- **OFFICIAL CODE** — behavior of the pinned NVIDIA implementation.
+- **LSS PAPER / LSS CODE** — claims and behavior of the original ECCV 2020 system.
+- **BEVDEPTH PAPER / BEVDEPTH CODE** — its explicit depth supervision, camera-aware DepthNet and efficient pooling; no BEVDepth checkpoint output is fabricated.
 - **TEACHING** — equation-driven reconstruction where no trained artifact was released.
 
 No weights or NVIDIA source are vendored. See [EVIDENCE.md](EVIDENCE.md), [COVERAGE.md](COVERAGE.md), [NOTICE.md](NOTICE.md) and the [source notes](articles/lift-splat-shoot-source-notes.md).
@@ -49,10 +51,11 @@ pnpm build:pages
 
 ## Interaction
 
-- Move through twelve progressively dependent scenes; each states why the operation exists, what enters, what changes and what leaves.
+- Move through ten progressively dependent scenes; each states why the operation exists, what enters, what changes and what leaves.
 - Read the persistent tensor ledger from left to right: input shape, named operation, output shape.
-- Every scene uses the same full-screen spatial hand-drawn system; drag to rotate, scroll to zoom, and click cameras or ray depths directly.
-- Use the three short pause sections for geometry, BEV truth and robustness/trajectory experiments.
+- Step through network pixel, raw pixel, camera ray, camera point and ego point without changing the selected candidate.
+- Compare sum, mean, max and bilinear splatting, then move a candidate through a cell boundary.
+- Use the geometry and truth evidence drawers for real images, calibration, checkpoint output, GT and LiDAR.
 - The bottom timeline, arrow keys and autoplay move between scenes; Escape closes the contents drawer.
 - The UI honors `prefers-reduced-motion`.
 
@@ -60,6 +63,8 @@ pnpm build:pages
 
 - [Lift, Splat, Shoot paper](https://www.ecva.net/papers/eccv_2020/papers_ECCV/papers/123590188.pdf)
 - [Pinned official implementation](https://github.com/nv-tlabs/lift-splat-shoot/tree/2903467c91ee9c12f0917a12c22ab1f04e607ae0)
+- [BEVDepth paper](https://arxiv.org/abs/2206.10092)
+- [BEVDepth official implementation](https://github.com/Megvii-BaseDetection/BEVDepth)
 - [Pinned OpenMMLab nuScenes demo](https://github.com/open-mmlab/mmdetection3d/tree/fe25f7a51d36e3702f961e198894580d83c4387b/demo/data/nuscenes)
 
 The site code is MIT licensed. Dataset and model artifacts remain subject to their own terms; see [NOTICE.md](NOTICE.md).
