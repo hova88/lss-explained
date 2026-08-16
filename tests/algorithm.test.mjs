@@ -166,7 +166,7 @@ test("pinned alignment contract and LiDAR binary are internally consistent",asyn
   assert.ok(alignment.camera_projections.every(row=>row.visible_points>1000&&row.rotation_orthogonality_max_error<1e-6));
 });
 
-test("v10 public experience is English-only and defines ten LSS/BEVDepth tensor scenes",async()=>{
+test("v11 public experience is English-only and defines seven restrained tensor scenes",async()=>{
   const [content,explainer,layout,illustration]=await Promise.all([
     readFile(new URL("../app/lss-content.ts",import.meta.url),"utf8"),
     readFile(new URL("../app/LssExplainer.tsx",import.meta.url),"utf8"),
@@ -174,20 +174,22 @@ test("v10 public experience is English-only and defines ten LSS/BEVDepth tensor 
     readFile(new URL("../app/IllustrationStage.tsx",import.meta.url),"utf8"),
   ]);
   const source=`${content}\n${explainer}\n${layout}\n${illustration}`;
-  assert.equal((content.match(/id:\s*\"[a-z-]+\"/g)??[]).length,10);
+  assert.equal((content.match(/id:\s*\"[a-z-]+\"/g)??[]).length,7);
   assert.equal(/[\u3400-\u9fff]/u.test(source),false);
   assert.equal(/type\s+Locale|Localized|setLanguage|language-switch/.test(source),false);
   assert.ok(layout.includes('<html lang="en">'));
   assert.equal(/LssScene|@react-three|from ["']three["']|Open 3D|calibrated WebGL/.test(source),false);
-  assert.equal((content.match(/explanation:\s*"/g)??[]).length,10);
-  assert.equal((content.match(/tensor:\s*\{/g)??[]).length,10);
-  assert.ok(content.split("\n").filter(line=>/explanation:\s*"/.test(line)).every(line=>line.length<560));
+  assert.equal((content.match(/explanation:\s*"/g)??[]).length,7);
+  assert.equal((content.match(/tensor:\s*\{/g)??[]).length,7);
+  assert.ok(content.split("\n").filter(line=>/explanation:\s*"/.test(line)).every(line=>line.length<360));
   assert.ok(explainer.includes("lesson-timeline"));
   assert.ok(explainer.includes("tensor-ledger"));
   assert.ok(explainer.includes("frame-control"));
-  assert.ok(explainer.includes('GEOMETRY_TARGETS=["image-to-ray","image-to-ray","image-to-ray","ray-to-camera","camera-to-ego"]'));
-  assert.ok(explainer.includes("go(target,step)"));
   assert.ok(explainer.includes("TRACE_TENSORS[geometryStep]"));
+  assert.ok(explainer.includes("RayEvidenceInspector"));
+  assert.ok(explainer.includes("context_features"));
+  assert.ok(explainer.includes("selectedPixel"));
+  assert.ok(explainer.includes("featureCell"));
   assert.ok(explainer.includes("SAME SAMPLE ID, CAMERA AND DEPTH STAY FIXED")||explainer.includes("SAMPLE ID, CAMERA AND DEPTH STAY FIXED"));
   assert.equal(illustration.includes("dragRef.current!.yaw"),false);
   assert.ok(illustration.includes("const drag=dragRef.current"));

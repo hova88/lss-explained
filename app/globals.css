@@ -263,7 +263,7 @@ input[type="range"] { width: 100%; accent-color: var(--rust); }
 .lesson-timeline>button:disabled { opacity:.2; cursor:default; }
 .lesson-timeline svg { width:17px; height:17px; }
 .play-control { width:36px;height:36px;border:1px solid var(--ink)!important;border-radius:50%!important; }
-.lesson-timeline>div { display:grid; grid-template-columns:repeat(10,1fr); align-items:start; height:48px; }
+.lesson-timeline>div { display:grid; grid-template-columns:repeat(7,1fr); align-items:start; height:48px; }
 .lesson-timeline>div button { position:relative; height:48px; border:0; border-top:1px solid rgba(35,39,36,.35); padding:0; background:transparent; cursor:pointer; }
 .lesson-timeline>div button i { position:absolute; top:-4px; left:50%; width:7px;height:7px;border:1px solid var(--ink);border-radius:50%;background:var(--paper); transform:translateX(-50%); }
 .lesson-timeline>div button span { position:absolute; top:13px; left:50%; width:98px; opacity:0; transform:translateX(-50%); font:600 11px/1 Caveat,cursive; pointer-events:none; }
@@ -274,11 +274,48 @@ input[type="range"] { width: 100%; accent-color: var(--rust); }
 .evidence-drawer .lab-break { width:100%; min-height:100%; padding:38px 30px; border:0; box-shadow:none; }
 .evidence-drawer .lab-heading h2 { font-size:38px; }
 
+/* v11 · restrained seven-scene tensor narrative */
+.story-step { width:min(350px,29vw); }
+.story-step h2 { max-width:350px; font-size:clamp(38px,3.4vw,50px); }
+.scene-reveal { max-width:335px; font-size:clamp(15px,1.25vw,18px); }
+.scene-explanation { max-width:330px; color:var(--muted); font-size:10.5px; line-height:1.5; }
+.scene-formula { max-width:335px; padding:7px 9px; background:rgba(251,246,235,.58); }
+.story-step footer { max-width:330px; margin-top:7px; padding-top:6px; }
+.tensor-ledger { left:30%; right:18%; }
+.scene-0 .illustration-stage { opacity:.1; }
+.scene-0 .sketch-note { display:none; }
+
+.ray-inspector { position:absolute; z-index:5; top:76px; right:3%; bottom:76px; left:34%; display:grid; grid-template-columns:minmax(360px,1.35fr) minmax(250px,.8fr); gap:20px; color:var(--ink); }
+.ray-inspector.loading { place-items:center; color:var(--muted); font:500 8px/1 DM Mono,monospace; }
+.ray-photo-column { min-width:0; display:flex; flex-direction:column; justify-content:center; gap:9px; }
+.ray-presets { display:flex; gap:6px; }
+.ray-presets button { border:0; border-bottom:1px solid var(--line); padding:4px 8px; background:transparent; color:var(--muted); cursor:pointer; font:500 6px/1 DM Mono,monospace; text-transform:uppercase; }
+.ray-presets button:hover { border-color:var(--rust); color:var(--rust); }
+.ray-photo { position:relative; display:block; width:100%; aspect-ratio:16/9; overflow:hidden; border:1px solid rgba(35,39,36,.48); padding:0; background:var(--ink); cursor:crosshair; }
+.ray-photo img { display:block; width:100%; height:100%; object-fit:cover; pointer-events:none; filter:saturate(.72) contrast(1.03); }
+.network-crop { position:absolute; z-index:1; top:var(--crop-top); right:0; left:0; height:var(--crop-height); border-block:1px dashed rgba(212,170,81,.9); box-shadow:0 0 0 1000px rgba(243,236,222,.32); pointer-events:none; }
+.pixel-crosshair { position:absolute; z-index:2; left:var(--u); top:var(--v); width:15px; height:15px; border:1px solid #fff8e9; border-radius:50%; box-shadow:0 0 0 2px rgba(195,94,60,.75); transform:translate(-50%,-50%); pointer-events:none; }
+.pixel-crosshair:before,.pixel-crosshair:after { content:""; position:absolute; left:50%; top:50%; background:#fff8e9; transform:translate(-50%,-50%); }
+.pixel-crosshair:before { width:25px; height:1px; }.pixel-crosshair:after { width:1px; height:25px; }
+.ray-coordinate-line { display:flex; align-items:center; justify-content:space-between; gap:7px; color:var(--muted); font:400 6px/1.3 DM Mono,monospace; }
+.ray-coordinate-line span { display:flex; gap:4px; white-space:nowrap; }.ray-coordinate-line b { color:var(--blue); font-weight:500; }.ray-coordinate-line i { color:var(--rust); font-style:normal; }
+.crop-message { margin:0; color:var(--rust); font:500 7px/1.4 DM Mono,monospace; }
+.ray-signals { min-width:0; display:flex; flex-direction:column; justify-content:center; gap:12px; }
+.ray-signals section { padding-top:8px; border-top:1px solid var(--line); }
+.ray-signals header { display:flex; align-items:center; justify-content:space-between; gap:8px; color:var(--muted); font:500 6px/1.25 DM Mono,monospace; }
+.ray-signals header span { color:var(--ink); }.ray-signals header b { color:var(--rust); font-weight:500; white-space:nowrap; }
+.ray-signals .depth-sketch { height:82px; margin-top:6px; }
+.signal-depth footer { display:flex; justify-content:space-between; margin-top:4px; color:var(--muted); font:400 6px/1 DM Mono,monospace; }
+.signal-context>div { display:grid; grid-template-columns:repeat(8,1fr); gap:3px; width:min(100%,240px); margin-top:8px; }
+.signal-context>div i { aspect-ratio:1; border-radius:1px; }
+.signal-context footer { margin-top:7px; color:var(--muted); font:600 10px/1 Caveat,cursive; }
+.ray-signals>code { align-self:flex-start; padding:7px 9px; border-left:2px solid var(--rust); color:var(--blue); font:500 7px/1.3 DM Mono,monospace; }
+
 @media (max-width: 820px) {
   .visual-essay { min-height:600px; }
   .persistent-stage { top:48px; bottom:58px; height:auto; }
   .story-step { top:18px; left:20px; width:calc(100% - 40px); }
-  .story-step h2 { max-width:330px; font-size:46px; }
+  .story-step h2 { max-width:330px; font-size:40px; }
   .scene-reveal { max-width:310px; font-size:17px; }
   .scene-explanation { max-width:300px; font-size:10.5px; line-height:1.48; }
   .method-contrast { max-width:310px; gap:4px; }
@@ -306,4 +343,13 @@ input[type="range"] { width: 100%; accent-color: var(--rust); }
   .evidence-drawer .lab-break { padding:28px 16px; }
   .sketch-note.note-a { top:48%; right:5%; }
   .sketch-note.note-b { left:6%; bottom:14%; }
+  .ray-inspector { top:175px; right:10px; bottom:68px; left:10px; display:block; overflow:auto; padding-bottom:18px; }
+  .ray-photo-column { gap:6px; }
+  .ray-presets button { padding-inline:5px; font-size:5px; }
+  .ray-coordinate-line { gap:3px; font-size:5px; }
+  .ray-signals { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:13px; }
+  .ray-signals .depth-sketch { height:82px; }
+  .ray-signals>code { grid-column:1/3; }
+  .signal-context>div { gap:2px; }
+  .scene-0 .tensor-ledger { display:none; }
 }

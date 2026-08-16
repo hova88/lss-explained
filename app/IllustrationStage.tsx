@@ -9,6 +9,7 @@ type IllustrationStageProps = {
   selectedCamera: number;
   depthIndex: number;
   geometryStep: number;
+  featureCell: [number,number];
   poolingMode: "sum" | "mean" | "max" | "bilinear";
   poolOffset: number;
   cameraPoses?: Array<{cam2ego:number[][];cam2img:number[][];post_rot:number[][];post_trans:number[];name?:string}>;
@@ -161,21 +162,22 @@ function drawCameraAxes(ctx:CanvasRenderingContext2D,random:()=>number,origin:Po
   arrow(ctx,random,origin[0],origin[1],origin[0]-8,origin[1]+scale,palette.blue);inkLabel(ctx,"+y down",origin[0]-3,origin[1]+scale+14,palette.blue,"center");
 }
 
-function drawProjectionSketch(ctx:CanvasRenderingContext2D,random:()=>number,width:number,height:number,depth:number,step:number,showMetric=false) {
+function drawProjectionSketch(ctx:CanvasRenderingContext2D,random:()=>number,width:number,height:number,depth:number,step:number,featureCell:Point2,showMetric=false) {
   const origin:Point2=[width*.43,height*.56],planeCenter:Point2=[width*.62,height*.42],objectCenter:Point2=[width*.82,height*.27];
   const raw=[[-82,-59],[82,-43],[82,64],[-82,48]].map(([x,y])=>[planeCenter[0]+x,planeCenter[1]+y] as Point2);
   const network=raw.map(([x,y])=>[planeCenter[0]+(x-planeCenter[0])*.78+18,planeCenter[1]+(y-planeCenter[1])*.78+8] as Point2);
   const selected:Point2=[planeCenter[0]+27,planeCenter[1]-4];
   const selectedNetwork:Point2=[planeCenter[0]+(selected[0]-planeCenter[0])*.78+18,planeCenter[1]+(selected[1]-planeCenter[1])*.78+8];
   roughRect(ctx,random,origin[0]-12,origin[1]-8,24,16,palette.ink,palette.ochre);dot(ctx,origin[0],origin[1],4,palette.ink,.9);inkLabel(ctx,"optical center O = [0,0,0]cam",origin[0]-18,origin[1]+28,palette.ink,"center");drawCameraAxes(ctx,random,origin);
-  if(step<=1){roughPolygon(ctx,random,network,palette.blue,palette.blue,.055);dot(ctx,selectedNetwork[0],selectedNetwork[1],6,palette.blue,.9);inkLabel(ctx,"network anchor p′=[u′,v′,1]",selectedNetwork[0]+10,selectedNetwork[1]+19,palette.blue);}
+  const anchor:[number,number]=[351*featureCell[1]/21,127*featureCell[0]/7];
+  if(step<=1){roughPolygon(ctx,random,network,palette.blue,palette.blue,.055);dot(ctx,selectedNetwork[0],selectedNetwork[1],6,palette.blue,.9);inkLabel(ctx,`p′=[${anchor.map(value=>value.toFixed(1)).join(", ")}, 1]`,selectedNetwork[0]+10,selectedNetwork[1]+19,palette.blue);}
   if(step===1){arrow(ctx,random,selectedNetwork[0]+8,selectedNetwork[1]-5,selected[0]+7,selected[1]-8,palette.rust);inkLabel(ctx,"A⁻¹(p′−a)",(selectedNetwork[0]+selected[0])*.5+9,(selectedNetwork[1]+selected[1])*.5-14,palette.rust,"center");}
   if(step>=1){roughPolygon(ctx,random,raw,palette.ochre,palette.ochre,.06);dot(ctx,selected[0],selected[1],6,palette.rust,.9);inkLabel(ctx,"raw pixel p=[u,v,1]",selected[0]+10,selected[1]-9,palette.rust);raw.forEach(corner=>roughLine(ctx,random,origin[0],origin[1],corner[0],corner[1],palette.pencil,.7,.32));arrow(ctx,random,origin[0]+8,origin[1]-3,planeCenter[0]-8,planeCenter[1]+3,palette.sage);inkLabel(ctx,"+z optical axis",(origin[0]+planeCenter[0])*.5,(origin[1]+planeCenter[1])*.5-12,palette.sage,"center");}
   if(step>=2){roughLine(ctx,random,origin[0],origin[1],objectCenter[0]+10,objectCenter[1]-2,palette.blue,1.7,.78);inkLabel(ctx,"r = K⁻¹p · direction only",(selected[0]+objectCenter[0])*.5,(selected[1]+objectCenter[1])*.5-14,palette.blue,"center");const boxW=128,boxH=94,dx=36,dy=-28;const front:[[number,number],[number,number],[number,number],[number,number]]=[[objectCenter[0]-boxW/2,objectCenter[1]-boxH/2],[objectCenter[0]+boxW/2,objectCenter[1]-boxH/2],[objectCenter[0]+boxW/2,objectCenter[1]+boxH/2],[objectCenter[0]-boxW/2,objectCenter[1]+boxH/2]];const back=front.map(([x,y])=>[x+dx,y+dy] as Point2);roughPolygon(ctx,random,front,palette.ink,undefined);roughPolygon(ctx,random,back,palette.ink,undefined);front.forEach((point,index)=>roughLine(ctx,random,point[0],point[1],back[index][0],back[index][1],palette.ink,1.2,.7));}
   if(showMetric){const t=(depth+1)/42,metric:Point2=[origin[0]+(objectCenter[0]-origin[0])*(.32+t*.52),origin[1]+(objectCenter[1]-origin[1])*(.32+t*.52)];for(let index=0;index<41;index+=1){const q=(index+1)/42,x=origin[0]+(objectCenter[0]-origin[0])*(.3+q*.57),y=origin[1]+(objectCenter[1]-origin[1])*(.3+q*.57);dot(ctx,x,y,index===depth?6:1.6,index===depth?palette.rust:palette.blue,index===depth?.95:.28);}dot(ctx,metric[0],metric[1],7,palette.rust,.92);inkLabel(ctx,`p_cam = d r · d=${depth+4}m`,metric[0]+12,metric[1]-10,palette.rust);}
 }
 
-function drawScene(ctx: CanvasRenderingContext2D, width: number, height: number, scene: NarrativeScene, progress: number, camera: number, depth: number, hits:HitRegion[], yaw:number, zoom:number, geometryStep:number, poolingMode:"sum"|"mean"|"max"|"bilinear",poolOffset:number,cameraPoses?:Array<{cam2ego:number[][];cam2img:number[][];post_rot:number[][];post_trans:number[];name?:string}>) {
+function drawScene(ctx: CanvasRenderingContext2D, width: number, height: number, scene: NarrativeScene, progress: number, camera: number, depth: number, featureCell:Point2, hits:HitRegion[], yaw:number, zoom:number, geometryStep:number, poolingMode:"sum"|"mean"|"max"|"bilinear",poolOffset:number,cameraPoses?:Array<{cam2ego:number[][];cam2img:number[][];post_rot:number[][];post_trans:number[];name?:string}>) {
   viewYaw=yaw;viewZoom=zoom;
   const random = seeded(sceneSeed(scene.id));
   const cx = width * 0.5, cy = height * 0.52;
@@ -226,9 +228,9 @@ function drawScene(ctx: CanvasRenderingContext2D, width: number, height: number,
     for(let index=0;index<41;index+=1){const t=(index+1)/42,x=origin[0]+(end[0]-origin[0])*t,y=origin[1]+(end[1]-origin[1])*t,peak=Math.exp(-1*((index-depth)/5)**2),radius=scene.illustration==="lift"?1.8+peak*7:index===depth?6.5:1.7;dot(ctx,x,y,radius,index===depth?palette.rust:palette.blue,scene.illustration==="lift"?.22+peak*.68:.46);hits.push({kind:"depth",index,x,y,radius:9});}
     if(scene.illustration==="lift")for(let index=0;index<9;index+=1){const t=.25+index*.055,x=origin[0]+(end[0]-origin[0])*t,y=origin[1]+(end[1]-origin[1])*t;wash(ctx,random,x,y,18+index*2,10+index,palette.blue,.025);}
   } else if (scene.illustration === "image-ray") {
-    drawProjectionSketch(ctx,random,width,height,depth,geometryStep,false);
+    drawProjectionSketch(ctx,random,width,height,depth,geometryStep,featureCell,false);
   } else if (scene.illustration === "camera-point") {
-    drawProjectionSketch(ctx,random,width,height,depth,Math.max(2,geometryStep),true);
+    drawProjectionSketch(ctx,random,width,height,depth,Math.max(2,geometryStep),featureCell,true);
   } else if (scene.illustration === "ego-transform") {
     const s=Math.min(width,height)/18,baseY=cy+135;drawIsoGrid(ctx,random,cx+25,baseY,s,7);drawIsoCar(ctx,random,cx+25,baseY,s*.75);
     (cameraPoses??[]).forEach((pose,index)=>{
@@ -237,7 +239,7 @@ function drawScene(ctx: CanvasRenderingContext2D, width: number, height: number,
       if(index!==camera)return;
       const xEnd=iso([origin[0]+m[0][0]*1.5,origin[1]+m[1][0]*1.5,origin[2]+m[2][0]*1.5],cx+25,baseY,s),yEnd=iso([origin[0]+m[0][1]*1.5,origin[1]+m[1][1]*1.5,origin[2]+m[2][1]*1.5],cx+25,baseY,s),zEnd=iso([origin[0]+m[0][2]*2.2,origin[1]+m[1][2]*2.2,origin[2]+m[2][2]*2.2],cx+25,baseY,s);
       arrow(ctx,random,o[0],o[1],xEnd[0],xEnd[1],palette.rust);arrow(ctx,random,o[0],o[1],yEnd[0],yEnd[1],palette.blue);arrow(ctx,random,o[0],o[1],zEnd[0],zEnd[1],palette.sage);inkLabel(ctx,"camera basis R",o[0]+10,o[1]-18,palette.blue);
-      const uPrime=351*11/21,vPrime=127*4/7,u=(uPrime-pose.post_trans[0])/pose.post_rot[0][0],v=(vPrime-pose.post_trans[1])/pose.post_rot[1][1],d=depth+4,k=pose.cam2img;
+      const uPrime=351*featureCell[1]/21,vPrime=127*featureCell[0]/7,u=(uPrime-pose.post_trans[0])/pose.post_rot[0][0],v=(vPrime-pose.post_trans[1])/pose.post_rot[1][1],d=depth+4,k=pose.cam2img;
       const pCam:Point3=[(u-k[0][2])/k[0][0]*d,(v-k[1][2])/k[1][1]*d,d];
       const delta:Point3=[m[0][0]*pCam[0]+m[0][1]*pCam[1]+m[0][2]*pCam[2],m[1][0]*pCam[0]+m[1][1]*pCam[1]+m[1][2]*pCam[2],m[2][0]*pCam[0]+m[2][1]*pCam[1]+m[2][2]*pCam[2]],pEgo:Point3=[origin[0]+delta[0],origin[1]+delta[1],origin[2]+delta[2]];
       const compression=Math.min(1,6.5/Math.hypot(delta[0],delta[1],delta[2])),displayPoint:Point3=[origin[0]+delta[0]*compression,origin[1]+delta[1]*compression,origin[2]+delta[2]*compression],display=iso(displayPoint,cx+25,baseY,s);
@@ -257,6 +259,12 @@ function drawScene(ctx: CanvasRenderingContext2D, width: number, height: number,
     if(poolingMode!=="bilinear"){wash(ctx,random,gridX+(hardX+.5)*cell,gridY+(hardY+.5)*cell,cell*.45,cell*.43,poolingMode==="max"?palette.rust:palette.ochre,.16+.13*result);inkLabel(ctx,`${poolingMode} = ${result.toFixed(2)}`,gridX+(hardX+.5)*cell,gridY+(hardY+.5)*cell+4,palette.rust,"center");}else{const fx=moving[0]-hardX,fy=moving[1]-hardY,weights=[[0,0,(1-fx)*(1-fy)],[1,0,fx*(1-fy)],[0,1,(1-fx)*fy],[1,1,fx*fy]];weights.forEach(([dx,dy,w])=>{wash(ctx,random,gridX+(hardX+dx+.5)*cell,gridY+(hardY+dy+.5)*cell,cell*.44,cell*.42,palette.ochre,.08+.25*w);inkLabel(ctx,w.toFixed(2),gridX+(hardX+dx+.5)*cell,gridY+(hardY+dy+.5)*cell+4,palette.rust,"center");});}
     points.forEach(([px,py],index)=>{const x=gridX+px*cell,y=gridY+py*cell;dot(ctx,x,y,7,index===2?palette.rust:palette.blue,.9);inkLabel(ctx,`f${index+1}=${values[index]}`,x+9,y-7,index===2?palette.rust:palette.blue);if(poolingMode!=="bilinear"){const tx=gridX+(Math.floor(px)+.5)*cell,ty=gridY+(Math.floor(py)+.5)*cell;arrow(ctx,random,x,y+8,tx,ty-10,palette.pencil);}});
     inkLabel(ctx,"continuous ego XY",gridX,gridY-16,palette.blue);inkLabel(ctx,"floor → integer cell",gridX+6*cell,gridY+6*cell+20,palette.rust,"right");
+  } else if (scene.illustration === "bev-encoder") {
+    const y=height*.28,x=width*.43,drawTensor=(tx:number,ty:number,w:number,h:number,layers:number,color:string,label:string)=>{for(let layer=layers-1;layer>=0;layer-=1)roughRect(ctx,random,tx-layer*6,ty-layer*6,w,h,color,color);for(let row=1;row<5;row+=1)roughLine(ctx,random,tx,ty+h*row/5,tx+w,ty+h*row/5,color,.45,.18);for(let col=1;col<5;col+=1)roughLine(ctx,random,tx+w*col/5,ty,tx+w*col/5,ty+h,color,.45,.18);inkLabel(ctx,label,tx+w/2,ty+h+23,color,"center");};
+    drawTensor(x,y,170,170,5,palette.blue,"[B,64,200,200]");arrow(ctx,random,x+192,y+85,x+245,y+85,palette.rust);
+    drawTensor(x+255,y+30,125,125,3,palette.sage,"multiscale BEV");arrow(ctx,random,x+400,y+92,x+454,y+92,palette.rust);
+    drawTensor(x+465,y+47,94,94,1,palette.rust,"[B,1,200,200]");
+    inkLabel(ctx,"collapse Z",x+205,y+64,palette.rust,"center");inkLabel(ctx,"BevEncode",x+427,y+72,palette.rust,"center");
   } else if (scene.illustration === "truth") {
     const s=Math.min(width,height)/18,baseY=cy+120;drawIsoGrid(ctx,random,cx,baseY,s,7);for(let index=0;index<18;index+=1){const point=iso([-5+random()*10,-5+random()*10,.05],cx,baseY,s);wash(ctx,random,point[0],point[1],13+random()*25,7+random()*13,index%3?palette.rust:palette.ochre,.055+random()*.08);}if(scene.illustration==="truth")for(let index=0;index<360;index+=1){const point=iso([-6+random()*12,-6+random()*12,.12+random()*.35],cx,baseY,s);dot(ctx,point[0],point[1],.6+random()*1.2,index%4?palette.blue:palette.sage,.32);}drawIsoCar(ctx,random,cx,baseY,s*.72);
   } else if (scene.illustration === "learning") {
@@ -287,13 +295,13 @@ export function IllustrationStage(props: IllustrationStageProps) {
       if (!ctx) return;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       hitsRef.current=[];
-      drawScene(ctx, rect.width, rect.height, props.scene, props.progress, props.selectedCamera, props.depthIndex,hitsRef.current,view.yaw,view.zoom,props.geometryStep,props.poolingMode,props.poolOffset,props.cameraPoses);
+      drawScene(ctx, rect.width, rect.height, props.scene, props.progress, props.selectedCamera, props.depthIndex,props.featureCell,hitsRef.current,view.yaw,view.zoom,props.geometryStep,props.poolingMode,props.poolOffset,props.cameraPoses);
     };
     const observer = new ResizeObserver(render);
     observer.observe(canvas);
     render();
     return () => observer.disconnect();
-  }, [props.scene, props.progress, props.selectedCamera, props.depthIndex,props.geometryStep,props.poolingMode,props.poolOffset,props.cameraPoses,view]);
+  }, [props.scene, props.progress, props.selectedCamera, props.depthIndex,props.featureCell,props.geometryStep,props.poolingMode,props.poolOffset,props.cameraPoses,view]);
 
   return (
     <div className="illustration-stage">

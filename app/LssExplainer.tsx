@@ -12,8 +12,7 @@ type PoolingMode = "sum" | "mean" | "max" | "bilinear";
 type SceneCamera = { cam2img:number[][]; cam2ego:number[][]; lidar2cam:number[][] };
 type Trajectory = { name:string; points:[number,number][]; cost:number; probability:number };
 const CAMERA_NAMES=["CAM_FRONT_LEFT","CAM_FRONT","CAM_FRONT_RIGHT","CAM_BACK_RIGHT","CAM_BACK","CAM_BACK_LEFT"];
-const GEOMETRY_DEFAULTS:Record<string,number>={"image-to-ray":2,"ray-to-camera":3,"camera-to-ego":4};
-const GEOMETRY_TARGETS=["image-to-ray","image-to-ray","image-to-ray","ray-to-camera","camera-to-ego"] as const;
+const GEOMETRY_DEFAULTS:Record<string,number>={"lift-geometry":2};
 const TRACE_LABELS=["p′ network","p raw","ray r","p camera","p ego"] as const;
 const TRACE_TENSORS=[
   {input:"feature anchor [h,w]",operation:"read frustum sample",detail:"network-image coordinates after resize and crop",output:"p′=[u′,v′,1] · network pixels"},
@@ -29,6 +28,7 @@ type Rig = { sample_token:string; timestamp:number; cameras:CameraRecord[]; lida
 type Variant = { image:string; logits:EncodedArray; probability_min:number; probability_max:number; probability_mean:number; evidence:string };
 type Model = { variants:Record<string,Variant>; ground_truth:{mask:EncodedArray;image:string}; geometry_contributors:{counts:EncodedArray}; tensor_checks:{finite:boolean;depth_probability_sum_max_error:number} };
 type Features = { depth_probabilities:EncodedArray; context_features:EncodedArray; feature_anchors:{x:number[];y:number[]} };
+type FeatureSelection = { raw:[number,number]; network:[number,number]; cell:[number,number]; anchor:[number,number]; delta:[number,number] };
 
 const BASE = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 const asset = (path:string) => `${BASE}${path.startsWith("/")?path:`/${path}`}`;
@@ -53,13 +53,35 @@ function StoryStep({ index }:{index:number}) {
       <p className="act-label">{scene.act}</p>
       <h2>{scene.title}</h2>
       <p className="scene-reveal">{scene.reveal}</p>
-      <p className="scene-question">{scene.question}</p>
       <p className="scene-explanation">{scene.explanation}</p>
-      {scene.comparison&&<div className="method-contrast"><span><b>LSS</b>{scene.comparison.lss}</span><span><b>BEVDepth</b>{scene.comparison.bevdepth}</span></div>}
       <code className="scene-formula">{scene.formula}</code>
       <footer><EvidenceTag value={scene.evidence} /><span>{scene.source}</span></footer>
     </article>
   );
+}
+
+function RayEvidenceInspector({camera,selection,depth,context,depthIndex,onPixel,onDepthSelect,message}:{camera:CameraRecord|null;selection:FeatureSelection|null;depth:number[];context:number[];depthIndex:number;onPixel:(pixel:[number,number])=>void;onDepthSelect:(index:number)=>void;message:string|null}) {
+  if(!camera||!selection)return <section className="ray-inspector loading">loading checkpoint tensors…</section>;
+  const peak=depth.indexOf(Math.max(...depth)),entropy=-depth.reduce((sum,value)=>sum+(value>0?value*Math.log(value):0),0),contextNorm=Math.hypot(...context),contextMax=Math.max(...context.map(Math.abs),1e-6);
+  const cropTop=(-camera.post_trans[1]/camera.post_rot[1][1])/900*100,cropBottom=((127-camera.post_trans[1])/camera.post_rot[1][1])/900*100;
+  const presets:[string,[number,number]][]=[["near truck",[300,450]],["far vehicle",[925,470]],["upper sky",[1100,260]]];
+  return <section className="ray-inspector" aria-label="Click a nuScenes pixel to inspect its depth and context tensors">
+    <div className="ray-photo-column">
+      <div className="ray-presets">{presets.map(([label,pixel])=><button key={label} onClick={()=>onPixel(pixel)}>{label}</button>)}</div>
+      <button className="ray-photo" onPointerDown={event=>{const rect=event.currentTarget.getBoundingClientRect();onPixel([Math.max(0,Math.min(1599,Math.round((event.clientX-rect.left)/rect.width*1600))),Math.max(0,Math.min(899,Math.round((event.clientY-rect.top)/rect.height*900)))]);}} aria-label="CAM FRONT raw image; click a pixel">
+        <img src={asset(camera.image)} alt="CAM FRONT nuScenes sample" draggable={false} />
+        <i className="network-crop" style={{"--crop-top":`${cropTop}%`,"--crop-height":`${cropBottom-cropTop}%`} as React.CSSProperties} />
+        <b className="pixel-crosshair" style={{"--u":`${selection.raw[0]/16}%`,"--v":`${selection.raw[1]/9}%`} as React.CSSProperties}><span /></b>
+      </button>
+      <div className="ray-coordinate-line"><span>raw <b>[{selection.raw.join(", ")}]</b></span><i>→</i><span>network <b>[{selection.network.map(value=>f(value,1)).join(", ")}]</b></span><i>→</i><span>feature <b>[{selection.cell.join(", ")}]</b></span></div>
+      {message&&<p className="crop-message">{message}</p>}
+    </div>
+    <div className="ray-signals">
+      <section className="signal-depth"><header><span>WHERE · depth distribution [41]</span><b>peak {peak+4} m · H {f(entropy,2)}</b></header><DepthSketch values={depth} selected={depthIndex} onSelect={onDepthSelect} /><footer><span>4 m</span><span>45 m</span></footer></section>
+      <section className="signal-context"><header><span>WHAT · context feature [64]</span><b>‖c‖₂ {f(contextNorm,2)}</b></header><div>{context.map((value,index)=><i key={index} title={`channel ${index}: ${f(value,3)}`} style={{background:value>=0?`rgba(195,94,60,${.08+.82*Math.abs(value)/contextMax})`:`rgba(49,92,156,${.08+.82*Math.abs(value)/contextMax})`}} />)}</div><footer>8 × 8 is a channel tile—not image space</footer></section>
+      <code>F[d,c] = α[d] · context[c]</code>
+    </div>
+  </section>;
 }
 
 function DepthSketch({ values, selected, onSelect }:{values:number[];selected:number;onSelect:(index:number)=>void}) {
@@ -75,14 +97,14 @@ function LabShell({ id, title, eyebrow, children }:{id:LabId;title:string;eyebro
   return <section className={`lab-break lab-${id}`} data-lab={id}><div className="lab-heading"><p>{eyebrow}</p><h2>{title}</h2><span>Change one thing. Watch the whiteboard answer.</span></div><div className="lab-controls">{children}</div></section>;
 }
 
-function GeometryLab({ rig,selectedCamera,setSelectedCamera,depth,depthIndex,setDepthIndex }:{rig:Rig|null;selectedCamera:number;setSelectedCamera:(index:number)=>void;depth:number[];depthIndex:number;setDepthIndex:(index:number)=>void}) {
+function GeometryLab({ rig,selectedCamera,setSelectedCamera,selection,depth,depthIndex,setDepthIndex }:{rig:Rig|null;selectedCamera:number;setSelectedCamera:(index:number)=>void;selection:FeatureSelection|null;depth:number[];depthIndex:number;setDepthIndex:(index:number)=>void}) {
   const camera=rig?.cameras[selectedCamera];
-  const anchor=nearestFeatureAnchor([184,73]) as {index:[number,number];anchor:[number,number];delta:[number,number]};
+  const anchor=selection?.anchor??nearestFeatureAnchor([184,73]).anchor;
   return <LabShell id="geometry" eyebrow="PAUSE 01 · GEOMETRY" title="Trace one anchor">
     <CameraStrip rig={rig} selected={selectedCamera} enabled={Array(6).fill(true)} onSelect={setSelectedCamera} />
     <div className="geometry-workbench">
       <figure className="torn-photo"><img src={asset(camera?.network_image??"")} alt={`${short(camera?.name??"camera")} network input`} /><figcaption>network image · 352 × 128</figcaption></figure>
-      <div className="transform-thread"><span><b>network</b><code>[{f(anchor.anchor[0],2)}, {f(anchor.anchor[1],2)}]</code></span><i>→</i><span><b>undo A,a</b><code>raw pixel</code></span><i>→</i><span><b>K⁻¹</b><code>camera ray</code></span><i>→</i><span><b>R,+t</b><code>ego meters</code></span></div>
+      <div className="transform-thread"><span><b>network</b><code>[{f(anchor[0],2)}, {f(anchor[1],2)}]</code></span><i>→</i><span><b>undo A,a</b><code>raw pixel</code></span><i>→</i><span><b>K⁻¹</b><code>camera ray</code></span><i>→</i><span><b>R,+t</b><code>ego meters</code></span></div>
       <div className="matrix-note"><span>K · camera intrinsics</span>{camera?.cam2img.map((row,index)=><code key={index}>{row.map((value)=>f(value,2).padStart(9," ")).join(" ")}</code>)}</div>
     </div>
     <div className="depth-panel"><div><b>latent depth allocation</b><span>selected {depthIndex+4} m</span></div><DepthSketch values={depth} selected={depthIndex} onSelect={setDepthIndex} /></div>
@@ -113,6 +135,7 @@ export default function LssExplainer() {
   const [activeScene,setActiveScene]=useState(0),[progress,setProgress]=useState(1),[contentsOpen,setContentsOpen]=useState(false),[playing,setPlaying]=useState(false),[labOpen,setLabOpen]=useState(false);
   const [rig,setRig]=useState<Rig|null>(null),[features,setFeatures]=useState<Features|null>(null),[model,setModel]=useState<Model|null>(null);
   const [selectedCamera,setSelectedCamera]=useState(1),[depthIndex,setDepthIndex]=useState(15);
+  const [selectedPixel,setSelectedPixel]=useState<[number,number]>([925,470]),[rayMessage,setRayMessage]=useState<string|null>(null);
   const [geometryStep,setGeometryStep]=useState(2),[poolingMode,setPoolingMode]=useState<PoolingMode>("sum"),[poolOffset,setPoolOffset]=useState(.34);
   const [bevMode,setBevMode]=useState<BevMode>("probability"),[threshold,setThreshold]=useState(.5),[bevOpacity,setBevOpacity]=useState(.82),[rawGrid,setRawGrid]=useState(false);
   const [enabled,setEnabled]=useState<boolean[]>(Array(6).fill(true)),[yaw,setYaw]=useState(0),[temperature,setTemperature]=useState(.8),[selectedTrajectory,setSelectedTrajectory]=useState(0);
@@ -127,8 +150,13 @@ export default function LssExplainer() {
   useEffect(()=>{const handler=(event:KeyboardEvent)=>{if(event.key==="Escape")setContentsOpen(false);if(event.key==="ArrowDown"||event.key==="ArrowRight"){event.preventDefault();go(activeScene+1);}if(event.key==="ArrowUp"||event.key==="ArrowLeft"){event.preventDefault();go(activeScene-1);}};addEventListener("keydown",handler);return()=>removeEventListener("keydown",handler);},[activeScene,go]);
   useEffect(()=>{if(!playing)return;const timer=setInterval(()=>setActiveScene(current=>{const next=(current+1)%SCENES.length;setGeometryStep(GEOMETRY_DEFAULTS[SCENES[next].id]??2);history.replaceState(null,"",`#${SCENES[next].id}`);setProgress(0);requestAnimationFrame(()=>setProgress(1));return next;}),6500);return()=>clearInterval(timer);},[playing]);
 
-  const allDepth=useMemo(()=>decodeFloat(features?.depth_probabilities),[features]);
-  const depth=useMemo(()=>Array.from({length:41},(_,d)=>allDepth?.[selectedCamera*41*8*22+d*8*22+4*22+11]??0),[allDepth,selectedCamera]);
+  const rayCamera=rig?.cameras[selectedCamera]??null;
+  const featureSelection=useMemo<FeatureSelection|null>(()=>{if(!rayCamera)return null;const network:[number,number]=[rayCamera.post_rot[0][0]*selectedPixel[0]+rayCamera.post_trans[0],rayCamera.post_rot[1][1]*selectedPixel[1]+rayCamera.post_trans[1]],nearest=nearestFeatureAnchor(network) as {index:[number,number];anchor:[number,number];delta:[number,number]};return{raw:selectedPixel,network,cell:nearest.index,anchor:nearest.anchor,delta:nearest.delta};},[rayCamera,selectedPixel]);
+  const selectRayPixel=useCallback((pixel:[number,number])=>{const camera=rig?.cameras[selectedCamera];if(!camera)return;const network:[number,number]=[camera.post_rot[0][0]*pixel[0]+camera.post_trans[0],camera.post_rot[1][1]*pixel[1]+camera.post_trans[1]];if(network[0]<0||network[0]>351||network[1]<0||network[1]>127){setRayMessage(`raw [${pixel.join(", ")}] is outside the 352 × 128 network crop`);return;}setSelectedPixel(pixel);setRayMessage(null);},[rig,selectedCamera]);
+  const cellRow=featureSelection?.cell[0]??3,cellColumn=featureSelection?.cell[1]??12;
+  const allDepth=useMemo(()=>decodeFloat(features?.depth_probabilities),[features]),allContext=useMemo(()=>decodeFloat(features?.context_features),[features]);
+  const depth=useMemo(()=>Array.from({length:41},(_,d)=>allDepth?.[selectedCamera*41*8*22+d*8*22+cellRow*22+cellColumn]??0),[allDepth,selectedCamera,cellRow,cellColumn]);
+  const context=useMemo(()=>Array.from({length:64},(_,channel)=>allContext?.[selectedCamera*64*8*22+channel*8*22+cellRow*22+cellColumn]??0),[allContext,selectedCamera,cellRow,cellColumn]);
   const activeDrop=enabled.findIndex((value)=>!value),variantKey=activeDrop>=0?`drop-${CAMERA_NAMES[activeDrop].toLowerCase().replaceAll("_","-")}`:`front-yaw-${yaw>=0?"+":""}${yaw}`;
   const activeVariant=model?.variants[variantKey]??model?.variants["all-cameras"];
   const logits=useMemo(()=>decodeFloat(activeVariant?.logits),[activeVariant]);
@@ -137,29 +165,30 @@ export default function LssExplainer() {
   const stats=useMemo(()=>probability&&groundTruth?binaryStats(Array.from(probability),Array.from(groundTruth),threshold):null,[probability,groundTruth,threshold]);
   const trajectories=useMemo<Trajectory[]>(()=>{const paths=Array.from({length:9},(_,index)=>Array.from({length:21},(_,sample)=>{const y=sample*.72;return[(index-4)*.017*y*y,y] as [number,number];}));const map=([x,y]:[number,number])=>.055*Math.abs(x)+.85*Math.exp(-((x-2.3)**2+(y-9)**2)/5)+.5*Math.exp(-((x+1.4)**2+(y-13)**2)/3),costs=paths.map((path)=>trajectoryCost(path,map,.14)),probabilities=boltzmannProbabilities(costs,temperature);return costs.map((cost,index)=>({name:index===costs.indexOf(Math.min(...costs))?"minimum cost":`template ${index+1}`,points:paths[index],cost,probability:probabilities[index]})).sort((a,b)=>a.cost-b.cost);},[temperature]);
   const scene=SCENES[activeScene];
-  const geometryScene=["image-to-ray","ray-to-camera","camera-to-ego"].includes(scene.id);
-  const traceGeometry=(step:number)=>{const target=SCENES.findIndex(item=>item.id===GEOMETRY_TARGETS[step]);go(target,step);};
+  const geometryScene=scene.id==="lift-geometry";
+  const traceGeometry=(step:number)=>setGeometryStep(step);
   const poolCopy:Record<PoolingMode,{operation:string;detail:string;formula:string}>={sum:{operation:"grouped SUM",detail:"preserves accumulated evidence · official LSS",formula:"Σ fᵢ"},mean:{operation:"grouped MEAN",detail:"normalizes away contributor count · comparison",formula:"Σ fᵢ / n"},max:{operation:"channel-wise MAX",detail:"keeps the strongest response · comparison",formula:"maxᵢ fᵢ"},bilinear:{operation:"4-neighbor weighted SPLAT",detail:"smoothly spreads one candidate · comparison",formula:"Σ wᵢⱼ fᵢ"}};
   const tensor=geometryScene?TRACE_TENSORS[geometryStep]:scene.id==="splat-pooling"?{...scene.tensor,operation:poolCopy[poolingMode].operation,detail:poolCopy[poolingMode].detail}:scene.tensor;
+  const stageIllustration=geometryScene?(geometryStep===4?"ego-transform":geometryStep===3?"camera-point":"image-ray"):scene.illustration,stageScene={...scene,illustration:stageIllustration} as typeof scene;
 
-  const activeLab=scene.lab==="geometry"?<GeometryLab rig={rig} selectedCamera={selectedCamera} setSelectedCamera={setSelectedCamera} depth={depth} depthIndex={depthIndex} setDepthIndex={setDepthIndex} />:scene.lab==="bev"?<BevLab rig={rig} selectedCamera={selectedCamera} setSelectedCamera={setSelectedCamera} bevMode={bevMode} setBevMode={setBevMode} threshold={threshold} setThreshold={setThreshold} opacity={bevOpacity} setOpacity={setBevOpacity} rawGrid={rawGrid} setRawGrid={setRawGrid} stats={stats} activeVariant={activeVariant} />:scene.lab==="robustness"?<RobustnessLab rig={rig} selectedCamera={selectedCamera} setSelectedCamera={setSelectedCamera} enabled={enabled} setEnabled={setEnabled} yaw={yaw} setYaw={setYaw} trajectories={trajectories} selectedTrajectory={selectedTrajectory} setSelectedTrajectory={setSelectedTrajectory} temperature={temperature} setTemperature={setTemperature} />:null;
+  const activeLab=scene.lab==="geometry"?<GeometryLab rig={rig} selectedCamera={selectedCamera} setSelectedCamera={setSelectedCamera} selection={featureSelection} depth={depth} depthIndex={depthIndex} setDepthIndex={setDepthIndex} />:scene.lab==="bev"?<BevLab rig={rig} selectedCamera={selectedCamera} setSelectedCamera={setSelectedCamera} bevMode={bevMode} setBevMode={setBevMode} threshold={threshold} setThreshold={setThreshold} opacity={bevOpacity} setOpacity={setBevOpacity} rawGrid={rawGrid} setRawGrid={setRawGrid} stats={stats} activeVariant={activeVariant} />:scene.lab==="robustness"?<RobustnessLab rig={rig} selectedCamera={selectedCamera} setSelectedCamera={setSelectedCamera} enabled={enabled} setEnabled={setEnabled} yaw={yaw} setYaw={setYaw} trajectories={trajectories} selectedTrajectory={selectedTrajectory} setSelectedTrajectory={setSelectedTrajectory} temperature={temperature} setTemperature={setTemperature} />:null;
 
   return <main className={`visual-essay scene-${activeScene} ${labOpen?"lab-open":""}`}>
-    <header className="essay-header"><a href={asset("/")}><span>LSS</span><b>EXPLAINED</b><sup>v10</sup></a><div><button onClick={()=>setContentsOpen(!contentsOpen)} aria-expanded={contentsOpen}><Menu />Contents</button><a href={asset("/articles/lift-splat-shoot-source-notes.md")}>Source notes</a><a href="https://github.com/hova88/lss-explained">GitHub ↗</a></div></header>
-    {contentsOpen&&<nav className="contents-drawer" aria-label="Table of contents"><button className="drawer-close" onClick={()=>setContentsOpen(false)}><X /></button><p>FIELD INDEX · 10 SCENES</p>{SCENES.map((item,index)=><button key={item.id} className={index===activeScene?"active":""} onClick={()=>go(index)}><span>{String(index+1).padStart(2,"0")}</span><b>{item.title}</b><small>{item.act}</small></button>)}</nav>}
+    <header className="essay-header"><a href={asset("/")}><span>LSS</span><b>EXPLAINED</b><sup>v11</sup></a><div><button onClick={()=>setContentsOpen(!contentsOpen)} aria-expanded={contentsOpen}><Menu />Contents</button><a href={asset("/articles/lift-splat-shoot-source-notes.md")}>Source notes</a><a href="https://github.com/hova88/lss-explained">GitHub ↗</a></div></header>
+    {contentsOpen&&<nav className="contents-drawer" aria-label="Table of contents"><button className="drawer-close" onClick={()=>setContentsOpen(false)}><X /></button><p>FIELD INDEX · 7 SCENES</p>{SCENES.map((item,index)=><button key={item.id} className={index===activeScene?"active":""} onClick={()=>go(index)}><span>{String(index+1).padStart(2,"0")}</span><b>{item.title}</b><small>{item.act}</small></button>)}</nav>}
 
     <section className="persistent-stage" aria-live="polite">
-      <IllustrationStage scene={scene} progress={progress} selectedCamera={selectedCamera} depthIndex={depthIndex} geometryStep={geometryStep} poolingMode={poolingMode} poolOffset={poolOffset} cameraPoses={rig?.cameras} onCameraSelect={setSelectedCamera} onDepthSelect={setDepthIndex} />
+      <IllustrationStage scene={stageScene} progress={progress} selectedCamera={selectedCamera} depthIndex={depthIndex} geometryStep={geometryStep} featureCell={[cellRow,cellColumn]} poolingMode={poolingMode} poolOffset={poolOffset} cameraPoses={rig?.cameras} onCameraSelect={setSelectedCamera} onDepthSelect={setDepthIndex} />
+      {scene.id==="ray-evidence"&&<RayEvidenceInspector camera={rayCamera} selection={featureSelection} depth={depth} context={context} depthIndex={depthIndex} onPixel={selectRayPixel} onDepthSelect={setDepthIndex} message={rayMessage} />}
       <StoryStep index={activeScene} />
-      {scene.id!=="encoder-supervision"&&<aside className="lecture-note"><b>{String(activeScene+1).padStart(2,"0")}.</b><span>{scene.steps[activeScene%3].text}</span></aside>}
       <div className="tensor-ledger" aria-label="Tensor operation for this scene">
         <code>{tensor.input}</code>
         <span><b>{tensor.operation}</b><small>{tensor.detail}</small></span>
         <code>{tensor.output}</code>
       </div>
-      {geometryScene&&<div className="stage-control frame-control"><small>ONE SAMPLE · FIVE COORDINATE STATES</small><div>{TRACE_LABELS.map((label,index)=><button key={label} className={geometryStep===index?"active":""} aria-current={geometryStep===index?"step":undefined} title={`Show ${label} in ${GEOMETRY_TARGETS[index]}`} onClick={()=>traceGeometry(index)}>{index}<span>{label}</span></button>)}</div></div>}
+      {geometryScene&&<div className="stage-control frame-control"><small>ONE SAMPLE · FIVE COORDINATE STATES</small><div>{TRACE_LABELS.map((label,index)=><button key={label} className={geometryStep===index?"active":""} aria-current={geometryStep===index?"step":undefined} title={`Show ${label}`} onClick={()=>traceGeometry(index)}>{index}<span>{label}</span></button>)}</div></div>}
       {scene.id==="splat-pooling"&&<div className="stage-control pool-control"><small>COLLISION RULE · <b>{poolCopy[poolingMode].formula}</b></small><div>{(["sum","mean","max","bilinear"] as PoolingMode[]).map(mode=><button key={mode} className={poolingMode===mode?"active":""} onClick={()=>setPoolingMode(mode)}>{mode}</button>)}</div><label>move candidate<input type="range" min="0" max="1" step=".01" value={poolOffset} onChange={event=>setPoolOffset(Number(event.target.value))} /></label></div>}
-      <div className="gesture-note">{geometryScene?"SELECT A STATE · THE SAMPLE ID, CAMERA AND DEPTH STAY FIXED":scene.id==="splat-pooling"?"CHOOSE A REDUCTION · MOVE THE RUST CANDIDATE":"DRAG TO ROTATE · SCROLL TO ZOOM · CLICK CAMERA OR DEPTH"}</div>
+      <div className="gesture-note">{scene.id==="ray-evidence"?"CLICK THE IMAGE · READ ONE RAY":geometryScene?"SELECT A STATE · THE SAMPLE ID, CAMERA AND DEPTH STAY FIXED":scene.id==="splat-pooling"?"CHOOSE A REDUCTION · MOVE THE RUST CANDIDATE":"DRAG TO ROTATE · SCROLL TO ZOOM"}</div>
       {scene.lab&&<button className="lab-toggle" onClick={()=>setLabOpen(!labOpen)}>{labOpen?"Close evidence":"Open evidence"}</button>}
     </section>
     {labOpen&&activeLab&&<div className="evidence-drawer">{activeLab}</div>}

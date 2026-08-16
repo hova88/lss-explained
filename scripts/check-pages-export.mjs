@@ -12,4 +12,4 @@ for(const relative of required){const info=await stat(join(out,relative));if(!in
 const sourceNotes=await readFile(join(root,"articles/lift-splat-shoot-source-notes.md"),"utf8"),exportedNotes=await readFile(join(out,"articles/lift-splat-shoot-source-notes.md"),"utf8");
 if(sourceNotes!==exportedNotes)throw new Error("Public source notes drifted from the canonical article");
 if(/locale|zh-CN|[\u3400-\u9fff]/u.test(html))throw new Error("Static HTML still contains the removed bilingual interface");
-console.log("verified /lss-explained: ten tensor-first scenes, LSS/BEVDepth source notes, LiDAR audit assets, and checkpoint rasters");
+console.log("verified /lss-explained: seven tensor-first scenes, LSS/BEVDepth source notes, LiDAR audit assets, and checkpoint rasters");

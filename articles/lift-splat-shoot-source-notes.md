@@ -1,6 +1,6 @@
 # LSS and BEVDepth source notes
 
-These notes accompany **LSS Explained v10**. The lesson follows one tensor through ten scenes, then uses BEVDepth to expose the part of the original LSS design that is easiest to misunderstand: how the depth branch is trained.
+These notes accompany **LSS Explained v11**. The lesson follows one selected ray through seven scenes, then uses BEVDepth to expose the part of the original LSS design that is easiest to misunderstand: how the depth branch is trained.
 
 The site keeps five evidence classes separate:
 
@@ -30,7 +30,7 @@ This is not panorama stitching. Each image keeps its own intrinsics, camera-to-e
 
 CamEncode shares EfficientNet-B0 weights across cameras and emits 105 channels at every 8 × 22 anchor. The first 41 channels are softmax-normalized depth logits; the remaining 64 values are context features.
 
-The distinction matters. Depth answers **where along this ray should evidence be placed?** Context answers **what evidence should be carried there?** Lift is their broadcast outer product:
+The distinction matters. Depth answers **where along this ray should evidence be placed?** Context answers **what evidence should be carried there?** The opening interaction reads both tensors from the nearest real 8 × 22 checkpoint anchor for the clicked CAM_FRONT pixel, so the near-truck, far-vehicle and sky examples are actual feature-cell comparisons. Lift is their broadcast outer product:
 
 ```text
 F3d[b,n,d,h,w,c] = softmax(D)[b,n,d,h,w] × C[b,n,c,h,w]

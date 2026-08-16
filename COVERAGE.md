@@ -1,27 +1,24 @@
 # Coverage contract
 
-The v10 course maps the original LSS paper, the BEVDepth paper, both official implementations and one fixed nuScenes sample to ten advanced tensor-first scenes. Every scene exposes one conceptual problem and one explicit input → operation → output transition.
+The v11 course maps the original LSS paper, the BEVDepth paper, both official implementations and one fixed nuScenes sample to seven advanced tensor-first scenes. The opening consolidates motivation, depth distribution and context into one real-pixel inspection; the second scene consolidates Lift and the entire calibrated coordinate chain.
 
 | # | Narrative scene | Paper / implementation coverage | Evidence |
 |---:|---|---|---|
-| 1 | The view must change, not just the features | motivation, input/output topology and the LSS→BEVDepth research question | LSS + BEVDEPTH PAPERS |
-| 2 | Depth is a distribution over locations | 41-bin softmax, one-hot/uniform/multimodal meanings and latent-vs-explicit supervision | LSS PAPER + CHECKPOINT |
-| 3 | Context is the payload, not the position | 105-channel split, 64D context and BEVDepth's 27D camera-aware conditioning | LSS + BEVDEPTH CODE |
-| 4 | Lift is broadcast multiplication | unsqueeze, broadcast multiplication and `[B,6,41,8,22,64]` frustum features | LSS CODE + BEVDepth Eq. 1 |
-| 5 | Undo the image before inverting the camera | optical center, network/raw image planes, inverse augmentation, K⁻¹ and direction ratios | LSS CODE |
-| 6 | Depth scales the ray into camera meters | `[du,dv,d]`, pinhole unprojection and camera-axis convention | LSS CODE |
-| 7 | Extrinsics make six camera tensors commensurable | real optical centers/outward axes, `R·p+t`, flattening and camera-aware contrast | REAL SAMPLE + BOTH CODEBASES |
-| 8 | Pooling decides what a BEV cell remembers | floor/rank/sort/QuickCumsum; interactive sum/mean/max/bilinear semantics; efficient voxel pooling | LSS + BEVDEPTH CODE |
-| 9 | The decisive difference is the depth gradient | BevEncode, indirect LSS task gradient, LiDAR projection, min pooling, binning, one-hot, masked BCE and `Ldet+3Ldepth` | LSS + BEVDEPTH CODE |
-| 10 | Audit outputs in their own coordinate system | LSS sigmoid/threshold, orientation contract, GT/LiDAR audit and BEVDepth detection-head boundary | CHECKPOINT + REAL SAMPLE + BEVDEPTH PAPER |
+| 1 | One ray, two predictions | task topology; real `(u,v)` → network anchor; 41-bin checkpoint depth distribution; 64D context payload; vehicle/sky comparison | LSS PAPER + CHECKPOINT |
+| 2 | Give every hypothesis a place | broadcast Lift; inverse post-transform; `K⁻¹`; metric depth; real `R,t`; camera point → ego point | LSS CODE + REAL SAMPLE |
+| 3 | Resolve collisions | bounds, floor/rank/sort/QuickCumsum; interactive sum/mean/max/bilinear semantics; efficient voxel pooling contrast | LSS + BEVDEPTH CODE |
+| 4 | Reason on the ground plane | `[B,C,Z,X,Y]`, Z collapse, `[B,64,200,200]`, BevEncode and vehicle logits | LSS CODE + CHECKPOINT |
+| 5 | Where does depth learn? | indirect LSS task gradient versus LiDAR-projected sparse depth target, min pooling, one-hot bins, valid-pixel BCE and `Ldet+3Ldepth` | LSS + BEVDEPTH CODE |
+| 6 | Turn logits into a decision | sigmoid, threshold, task-head and post-processing boundaries | LSS CODE + BEVDEPTH PAPER |
+| 7 | Audit the map | orientation contract, GT/LiDAR/checkpoint separation, TP/FP/FN and linked evidence | CHECKPOINT + REAL SAMPLE |
 
 ## Practice-pause mapping
 
 | Pause | Scenes | Browser contract |
 |---|---|---|
-| Calibrated geometry | 2–7 | real image, feature anchor, depth/context tensors, image plane, K⁻¹, camera XYZ, real outward frustums and exact ego transform |
-| Pooling comparison | 8 | live sum/mean/max/bilinear collision rule and a candidate crossing a cell boundary |
-| Linked BEV evidence | 10 | probability, threshold, GT, errors, LiDAR occupancy, contributors and raw-grid inspection |
+| Calibrated geometry | 1–2 | real image, selected feature anchor, checkpoint depth/context tensors, image plane, K⁻¹, camera XYZ, real outward frustums and exact ego transform |
+| Pooling comparison | 3 | live sum/mean/max/bilinear collision rule and a candidate crossing a cell boundary |
+| Linked BEV evidence | 7 | probability, threshold, GT, errors, LiDAR occupancy, contributors and raw-grid inspection |
 
 ## Deliberate boundaries
 
@@ -30,4 +27,4 @@ The v10 course maps the original LSS paper, the BEVDepth paper, both official im
 - LiDAR is described as BEVDepth training supervision only where explicitly labeled; BEVDepth inference remains camera-only.
 - The checkpoint is vehicle semantic segmentation; box decoding, NMS and tracking are not invented.
 - Per-frame TP/FP/FN/IoU diagnoses this sample only; dataset metrics are labeled PAPER.
-- The public ten-scene lesson ends at view transformation, task supervision, inference and truth auditing. LSS planning/Shoot is outside this edition's teaching path rather than compressed into an unrelated final control.
+- The public seven-scene lesson ends at view transformation, task supervision, inference and truth auditing. LSS planning/Shoot is outside this edition's teaching path rather than compressed into an unrelated final control.

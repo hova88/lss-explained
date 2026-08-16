@@ -1,10 +1,10 @@
 # LSS Explained — from pixels to BEV
 
-An English-only, source-audited advanced visual lesson about **Lift, Splat, Shoot** and the depth-learning correction introduced by **BEVDepth**. Ten spatial-ink scenes follow every tensor from perspective image features to metric BEV while separating geometry, aggregation, supervision and task decoding.
+An English-only, source-audited advanced visual lesson about **Lift, Splat, Shoot** and the depth-learning correction introduced by **BEVDepth**. Seven restrained spatial-ink scenes follow one tensor from a real image pixel to metric BEV while separating geometry, aggregation, supervision and task decoding.
 
 **Live:** https://hova88.github.io/lss-explained/
 
-This is the camera-to-BEV companion to [pointpillars-explained](https://github.com/hova88/pointpillars-explained). Version 10 is written for readers who already know the vocabulary and want to understand the mechanism: depth distribution versus context payload, broadcast Lift, the full image→ray→camera→ego chain, collision reductions, and the different gradient paths in LSS and BEVDepth. The pinned 34,688-point LiDAR scan is reference evidence for LSS and a visual reconstruction of BEVDepth's training-time depth-target process; it is never passed into the pinned LSS checkpoint.
+This is the camera-to-BEV companion to [pointpillars-explained](https://github.com/hova88/pointpillars-explained). Version 11 is written for readers who already know the vocabulary and want to understand the mechanism: click one real nuScenes pixel, inspect its checkpoint depth distribution and context vector, then preserve that sample identity through Lift, the full image→ray→camera→ego chain, collision reductions, and the different gradient paths in LSS and BEVDepth. The pinned 34,688-point LiDAR scan is reference evidence for LSS and a visual reconstruction of BEVDepth's training-time depth-target process; it is never passed into the pinned LSS checkpoint.
 
 ## Course path
 
@@ -51,7 +51,8 @@ pnpm build:pages
 
 ## Interaction
 
-- Move through ten progressively dependent scenes; each states why the operation exists, what enters, what changes and what leaves.
+- Move through seven progressively dependent scenes; each keeps one decisive idea and one input → operation → output transition.
+- Click the real CAM_FRONT image or use the near-truck, far-vehicle and sky presets to compare the corresponding checkpoint depth and context tensors.
 - Read the persistent tensor ledger from left to right: input shape, named operation, output shape.
 - Step through network pixel, raw pixel, camera ray, camera point and ego point without changing the selected candidate.
 - Compare sum, mean, max and bilinear splatting, then move a candidate through a cell boundary.
